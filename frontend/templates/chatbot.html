@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SaarInsights - Data Chatbot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f3f4f6;
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Left Sidebar */
+        .sidebar {
+            width: 260px;
+            background: #1f2937;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+        }
+
+        .sidebar-header {
+            padding: 24px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar-header h1 {
+            font-size: 20px;
+            font-weight: 700;
+            color: white;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            padding: 16px 0;
+            overflow-y: auto;
+        }
+
+        .nav-section {
+            margin-bottom: 24px;
+        }
+
+        .nav-section-title {
+            padding: 8px 20px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #9ca3af;
+            margin-bottom: 8px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 20px;
+            color: #d1d5db;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+        }
+
+        .nav-item.active {
+            background: rgba(102, 126, 234, 0.15);
+            color: #667eea;
+            border-left-color: #667eea;
+        }
+
+        .nav-item-icon {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .nav-item-text {
+            flex: 1;
+        }
+
+        .container {
+            flex: 1;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .header {
+            background: white;
+            color: #1f2937;
+            padding: 16px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #e5e7eb;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .header h2 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1f2937;
+            margin: 0;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background: #4ade80;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .chat-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #e5e7eb;
+        }
+
+        .data-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #f9fafb;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            display: flex;
+            gap: 10px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .message.bot .message-content {
+            background: #f3f4f6;
+            color: #1f2937;
+        }
+
+        .chat-input-container {
+            padding: 20px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .chat-input:focus {
+            border-color: #667eea;
+        }
+
+        .send-button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .send-button:hover {
+            transform: scale(1.05);
+        }
+
+        .send-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .data-header {
+            padding: 20px;
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .data-header h2 {
+            font-size: 18px;
+            color: #1f2937;
+        }
+
+        .refresh-button {
+            padding: 8px 16px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .data-content {
+            flex: 1;
+            overflow: auto;
+            padding: 20px;
+        }
+
+        .data-table {
+            width: 100%;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .data-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .data-table th {
+            background: #f9fafb;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #374151;
+            border-bottom: 2px solid #e5e7eb;
+            position: sticky;
+            top: 0;
+        }
+
+        .data-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+            color: #1f2937;
+        }
+
+        .data-table tr:hover {
+            background: #f9fafb;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6b7280;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .summary {
+            padding: 15px 20px;
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            color: #1e40af;
+            font-size: 14px;
+        }
+
+        .error {
+            background: #fef2f2;
+            border-left-color: #ef4444;
+            color: #991b1b;
+        }
+
+        .tab-button {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: #6b7280;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab-button:hover {
+            color: #374151;
+        }
+
+        .tab-button.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .history-item {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .history-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .history-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .history-item-title {
+            font-weight: 600;
+            color: #1f2937;
+        }
+
+        .history-item-meta {
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .history-item-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .history-item-badge.initial {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .history-item-badge.update {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .history-item-badge.manual_refresh {
+            background: #d1fae5;
+            color: #065f46;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Left Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1>🚀 SaarInsights</h1>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">Core</div>
+                    <div class="nav-item" onclick="navigateTo('data-onboarding')">
+                        <div class="nav-item-icon">📥</div>
+                        <div class="nav-item-text">Data Onboarding</div>
+                    </div>
+                    <div class="nav-item" onclick="navigateTo('build')">
+                        <div class="nav-item-icon">🏠</div>
+                        <div class="nav-item-text">Build</div>
+                    </div>
+                    <div class="nav-item" onclick="navigateTo('extract')">
+                        <div class="nav-item-icon">📊</div>
+                        <div class="nav-item-text">Extract</div>
+                    </div>
+                    <div class="nav-item" onclick="navigateTo('transform')">
+                        <div class="nav-item-icon">🗄️</div>
+                        <div class="nav-item-text">Transform</div>
+                    </div>
+                    <div class="nav-item active" onclick="navigateTo('dashboard')">
+                        <div class="nav-item-icon">🗄️</div>
+                        <div class="nav-item-text">Visualize</div>
+                    </div>
+                    <div class="nav-item" onclick="navigateTo('analyze')">
+                        <div class="nav-item-icon">🗄️</div>
+                        <div class="nav-item-text">Analyze</div>
+                    </div>
+                    <div class="nav-item" onclick="navigateTo('predict')">
+                        <div class="nav-item-icon">🗄️</div>
+                        <div class="nav-item-text">Predict</div>
+                    </div>
+                    <div class="nav-item" onclick="navigateTo('tell-the-story')">
+                        <div class="nav-item-icon">🗄️</div>
+                        <div class="nav-item-text">Tell the Story</div>
+                    </div>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">System</div>
+                    <div class="nav-item" onclick="navigateTo('settings')">
+                        <div class="nav-item-icon">⚙️</div>
+                        <div class="nav-item-text">Setting</div>
+                    </div>
+                    <div class="nav-item" onclick="navigateTo('help')">
+                        <div class="nav-item-icon">❓</div>
+                        <div class="nav-item-text">Help</div>
+                    </div>
+                </div>
+            </nav>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="container">
+            <div class="header">
+                <h2 id="pageTitle">Visualize</h2>
+                <div class="status">
+                    <div class="status-dot"></div>
+                    <span>Connected</span>
+                </div>
+            </div>
+
+        <div class="main-content">
+            <div class="chat-panel">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message bot">
+                        <div class="message-content">
+                            👋 Hello! I can help you view data from your PostgreSQL tables.
+                            <br><br>
+                            Try asking:
+                            <br>• "Show me orders data"
+                            <br>• "Display customers table"
+                            <br>• "Show me recent orders"
+                        </div>
+                    </div>
+                </div>
+                <div class="chat-input-container">
+                    <input 
+                        type="text" 
+                        class="chat-input" 
+                        id="chatInput" 
+                        placeholder="Ask about your data tables..."
+                        onkeypress="if(event.key === 'Enter') sendMessage()"
+                    >
+                    <button class="send-button" id="sendButton" onclick="sendMessage()">Send</button>
+                </div>
+            </div>
+
+            <div class="data-panel">
+                <div class="data-header">
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <button class="tab-button active" id="dataTab" onclick="showTab('data')">📊 Data</button>
+                        <button class="tab-button" id="historyTab" onclick="showTab('history')">📜 History</button>
+                    </div>
+                    <button class="refresh-button" id="refreshButton" onclick="refreshData()" style="display: none;">
+                        🔄 Refresh
+                    </button>
+                </div>
+                
+                <!-- Data Tab -->
+                <div class="tab-content active" id="dataTabContent">
+                    <div class="data-content" id="dataContent">
+                        <div class="empty-state">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            <p>Ask a question to view data</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- History Tab -->
+                <div class="tab-content" id="historyTabContent">
+                    <div class="data-content" id="historyContent">
+                        <div class="empty-state">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <p>View a table first to see its history</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentMonitorId = null;
+        let currentTableInfo = null; // Store current table info for history
+        let currentPage = 'dashboard'; // Track current page
+
+        // Navigation function
+        function navigateTo(page) {
+            // Update active nav item
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            event.target.closest('.nav-item').classList.add('active');
+            
+            currentPage = page;
+            
+            // Update page title
+            const pageTitles = {
+                'dashboard': 'Visualize',
+                'data-onboarding': 'Data Onboarding',
+                'build': 'Build',
+                'extract': 'Extract',
+                'transform': 'Transform',
+                'analyze': 'Analyze',
+                'predict': 'Predict',
+                'tell-the-story': 'Tell the Story',
+                'agents': 'Agents',
+                'pipelines': 'Pipelines',
+                'settings': 'Setting',
+                'help': 'Help'
+            };
+            document.getElementById('pageTitle').textContent = pageTitles[page] || 'Visualize';
+            
+            // Show/hide content based on page
+            const mainContent = document.querySelector('.main-content');
+            
+            // Remove any existing page content
+            let existingPageContent = document.getElementById('pageContent');
+            if (existingPageContent) {
+                existingPageContent.remove();
+            }
+            
+            if (page === 'data-onboarding') {
+                // Show chatbot interface for data-onboarding
+                mainContent.style.display = 'flex';
+            } else {
+                // For other pages, show placeholder content
+                mainContent.style.display = 'none';
+                showPageContent(page);
+            }
+        }
+
+        function showPageContent(page) {
+            const container = document.querySelector('.container');
+            let existingPageContent = document.getElementById('pageContent');
+            
+            if (existingPageContent) {
+                existingPageContent.remove();
+            }
+            
+            const pageContent = document.createElement('div');
+            pageContent.id = 'pageContent';
+            pageContent.style.cssText = 'flex: 1; padding: 0; overflow: hidden; background: #f9fafb; display: flex; flex-direction: column;';
+            
+            const pageContents = {
+                'dashboard': `
+                    <div style="width: 100%; height: 100%; padding: 40px; background: #f9fafb; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                        <h2 style="margin-bottom: 40px; color: #1f2937; font-size: 32px; font-weight: 600;">📊 Visualize</h2>
+                        <div style="display: flex; gap: 32px; width: 100%; max-width: 1200px; justify-content: center; flex-wrap: wrap;">
+                            <div style="padding: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 16px; color: white; cursor: pointer; transition: all 0.3s; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3); flex: 1; min-width: 400px; max-width: 500px;" 
+                                 onmouseover="this.style.transform='translateY(-5px)'; this.style.boxShadow='0 8px 20px rgba(102, 126, 234, 0.4)';" 
+                                 onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(102, 126, 234, 0.3)';"
+                                 onclick="alert('Build by Screenshot - Feature coming soon!')">
+                                <div style="font-size: 48px; margin-bottom: 16px; text-align: center;">📸</div>
+                                <h3 style="font-size: 24px; font-weight: 700; margin-bottom: 12px; text-align: center;">Build by Screenshot</h3>
+                                <p style="font-size: 16px; opacity: 0.95; text-align: center; line-height: 1.6; margin-bottom: 24px;">Upload a screenshot of your desired dashboard and let AI automatically recreate it with your data</p>
+                                <div style="text-align: center;">
+                                    <button style="padding: 12px 24px; background: white; color: #667eea; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s;" 
+                                            onmouseover="this.style.background='#f3f4f6';" 
+                                            onmouseout="this.style.background='white';">
+                                        Get Started
+                                    </button>
+                                </div>
+                            </div>
+                            <div style="padding: 40px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 16px; color: white; cursor: pointer; transition: all 0.3s; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); flex: 1; min-width: 400px; max-width: 500px;" 
+                                 onmouseover="this.style.transform='translateY(-5px)'; this.style.boxShadow='0 8px 20px rgba(16, 185, 129, 0.4)';" 
+                                 onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(16, 185, 129, 0.3)';"
+                                 onclick="alert('Build by Prompt - Feature coming soon!')">
+                                <div style="font-size: 48px; margin-bottom: 16px; text-align: center;">💬</div>
+                                <h3 style="font-size: 24px; font-weight: 700; margin-bottom: 12px; text-align: center;">Build by Prompt</h3>
+                                <p style="font-size: 16px; opacity: 0.95; text-align: center; line-height: 1.6; margin-bottom: 24px;">Describe your dashboard in natural language and AI will build it for you automatically</p>
+                                <div style="text-align: center;">
+                                    <button style="padding: 12px 24px; background: white; color: #10b981; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s;" 
+                                            onmouseover="this.style.background='#f3f4f6';" 
+                                            onmouseout="this.style.background='white';">
+                                        Get Started
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'build': `
+                    <div style="width: 100%; height: 100%; padding: 20px; background: #f3f4f6; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; overflow: hidden;">
+                        <!-- Top Row: Talk to AI Data Engineer and Context -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; flex: 0 0 35%; min-height: 0;">
+                            <!-- Top Left: Talk to AI Data Engineer -->
+                            <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; padding: 16px; overflow: hidden;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-shrink: 0;">
+                                    <h3 style="margin: 0; color: #1f2937; font-size: 16px; font-weight: 600;">Talk to AI Data Engineer</h3>
+                                    <div style="display: flex; gap: 6px;">
+                                        <select style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: white; color: #6b7280; cursor: pointer;">
+                                            <option>Sprint</option>
+                                        </select>
+                                        <select style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: white; color: #6b7280; cursor: pointer;">
+                                            <option>Aug</option>
+                                        </select>
+                                        <select style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: white; color: #6b7280; cursor: pointer;">
+                                            <option>2023</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div style="flex: 1; border: 1px solid #e5e7eb; border-radius: 4px; background: white; padding: 12px; overflow-y: auto; min-height: 0;">
+                                    <textarea style="width: 100%; height: 100%; border: none; outline: none; resize: none; font-family: inherit; font-size: 14px; color: #1f2937;" placeholder="Type your message here..."></textarea>
+                                </div>
+                            </div>
+
+                            <!-- Top Right: Context -->
+                            <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; padding: 16px; overflow: hidden;">
+                                <h3 style="margin: 0 0 12px 0; color: #1f2937; font-size: 16px; font-weight: 600; flex-shrink: 0;">Context</h3>
+                                <div style="flex: 1; border: 1px solid #e5e7eb; border-radius: 4px; background: white; padding: 12px; overflow-y: auto; min-height: 0;">
+                                    <textarea style="width: 100%; height: 100%; border: none; outline: none; resize: none; font-family: inherit; font-size: 14px; color: #1f2937;" placeholder="Add context here..."></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Middle: Output -->
+                        <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; padding: 16px; flex: 0 0 35%; min-height: 0; overflow: hidden;">
+                            <h3 style="margin: 0 0 12px 0; color: #1f2937; font-size: 16px; font-weight: 600; flex-shrink: 0;">Output</h3>
+                            <div style="flex: 1; border: 1px solid #e5e7eb; border-radius: 4px; background: white; padding: 12px; overflow-y: auto; margin-bottom: 12px; min-height: 0;">
+                                <textarea style="width: 100%; height: 100%; border: none; outline: none; resize: none; font-family: inherit; font-size: 14px; color: #1f2937;" placeholder="Output will appear here..."></textarea>
+                            </div>
+                            <!-- Buttons at bottom-right of Output panel -->
+                            <div style="display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0;">
+                                <button style="padding: 8px 20px; background: #10b981; color: white; border: none; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#059669';" onmouseout="this.style.background='#10b981';">Satisfied</button>
+                                <button style="padding: 8px 20px; background: #ef4444; color: white; border: none; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#dc2626';" onmouseout="this.style.background='#ef4444';">Not Satisfied</button>
+                            </div>
+                        </div>
+
+                        <!-- Bottom: Review Pane -->
+                        <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; padding: 16px; flex: 0 0 30%; min-height: 0; overflow: hidden;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-shrink: 0;">
+                                <h3 style="margin: 0; color: #1f2937; font-size: 16px; font-weight: 600;">Review Pane</h3>
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <span style="color: #6b7280; font-size: 14px;">22 Aug 2023</span>
+                                    <span style="color: #6b7280; font-size: 16px;">📅</span>
+                                    <button style="padding: 4px 12px; background: #f3f4f6; color: #1f2937; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#e5e7eb';" onmouseout="this.style.background='#f3f4f6';">Show</button>
+                                    <span style="color: #6b7280; font-size: 12px; cursor: pointer;">▼</span>
+                                </div>
+                            </div>
+                            <div style="flex: 1; border-top: 1px solid #e5e7eb; padding-top: 12px; overflow-y: auto; min-height: 0;">
+                                <!-- Horizontal lines for list/log -->
+                                <div style="height: 1px; background: #e5e7eb; margin-bottom: 12px;"></div>
+                                <div style="height: 1px; background: #e5e7eb; margin-bottom: 12px;"></div>
+                                <div style="height: 1px; background: #e5e7eb; margin-bottom: 12px;"></div>
+                                <div style="height: 1px; background: #e5e7eb; margin-bottom: 12px;"></div>
+                                <div style="height: 1px; background: #e5e7eb; margin-bottom: 12px;"></div>
+                                <div style="height: 1px; background: #e5e7eb;"></div>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'analytics': `
+                    <div style="max-width: 1200px; margin: 0 auto;">
+                        <h2 style="margin-bottom: 24px; color: #1f2937;">📈 Analytics</h2>
+                        <div style="background: white; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <p style="color: #6b7280; margin-bottom: 24px;">Monitor query performance, data quality metrics, and system health.</p>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 24px;">
+                                <div style="padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white;">
+                                    <div style="font-size: 32px; font-weight: 700; margin-bottom: 8px;">0</div>
+                                    <div style="font-size: 14px; opacity: 0.9;">Active Queries</div>
+                                </div>
+                                <div style="padding: 20px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 8px; color: white;">
+                                    <div style="font-size: 32px; font-weight: 700; margin-bottom: 8px;">0</div>
+                                    <div style="font-size: 14px; opacity: 0.9;">Pipeline Runs</div>
+                                </div>
+                                <div style="padding: 20px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border-radius: 8px; color: white;">
+                                    <div style="font-size: 32px; font-weight: 700; margin-bottom: 8px;">0</div>
+                                    <div style="font-size: 14px; opacity: 0.9;">Data Quality Issues</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'reports': `
+                    <div style="max-width: 1200px; margin: 0 auto;">
+                        <h2 style="margin-bottom: 24px; color: #1f2937;">📄 Reports</h2>
+                        <div style="background: white; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <p style="color: #6b7280; margin-bottom: 24px;">View and manage your data reports, dashboards, and insights.</p>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                                <div style="padding: 24px; background: #f9fafb; border-radius: 8px; border: 2px dashed #d1d5db; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#667eea'; this.style.background='#f3f4f6';" onmouseout="this.style.borderColor='#d1d5db'; this.style.background='#f9fafb';">
+                                    <h3 style="margin-bottom: 12px; color: #1f2937;">📈 Data Quality Report</h3>
+                                    <p style="color: #6b7280; font-size: 14px;">Comprehensive data quality metrics and validation results</p>
+                                </div>
+                                <div style="padding: 24px; background: #f9fafb; border-radius: 8px; border: 2px dashed #d1d5db; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#667eea'; this.style.background='#f3f4f6';" onmouseout="this.style.borderColor='#d1d5db'; this.style.background='#f9fafb';">
+                                    <h3 style="margin-bottom: 12px; color: #1f2937;">⚡ Pipeline Performance</h3>
+                                    <p style="color: #6b7280; font-size: 14px;">ETL pipeline execution times and success rates</p>
+                                </div>
+                                <div style="padding: 24px; background: #f9fafb; border-radius: 8px; border: 2px dashed #d1d5db; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#667eea'; this.style.background='#f3f4f6';" onmouseout="this.style.borderColor='#d1d5db'; this.style.background='#f9fafb';">
+                                    <h3 style="margin-bottom: 12px; color: #1f2937;">🔍 Query Analytics</h3>
+                                    <p style="color: #6b7280; font-size: 14px;">Query performance and optimization recommendations</p>
+                                </div>
+                                <div style="padding: 24px; background: #f9fafb; border-radius: 8px; border: 2px dashed #d1d5db; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#667eea'; this.style.background='#f3f4f6';" onmouseout="this.style.borderColor='#d1d5db'; this.style.background='#f9fafb';">
+                                    <h3 style="margin-bottom: 12px; color: #1f2937;">📋 Agent Activity</h3>
+                                    <p style="color: #6b7280; font-size: 14px;">AI agent execution logs and performance metrics</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'extract': `
+                    <div style="max-width: 1200px; margin: 0 auto;">
+                        <h2 style="margin-bottom: 24px; color: #1f2937;">📊 Extract</h2>
+                        <div style="background: white; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <p style="color: #6b7280; margin-bottom: 24px;">Extract data from various sources and systems.</p>
+                            <div style="padding: 20px; background: #f9fafb; border-radius: 8px; border: 2px dashed #d1d5db; text-align: center;">
+                                <p style="color: #6b7280;">Extract functionality coming soon...</p>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'transform': `
+                    <div style="max-width: 1200px; margin: 0 auto;">
+                        <h2 style="margin-bottom: 24px; color: #1f2937;">🗄️ Transform</h2>
+                        <div style="background: white; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <p style="color: #6b7280; margin-bottom: 24px;">Transform and reshape your data for analysis.</p>
+                            <div style="padding: 20px; background: #f9fafb; border-radius: 8px; border: 2px dashed #d1d5db; text-align: center;">
+                                <p style="color: #6b7280;">Transform functionality coming soon...</p>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'analyze': `
+                    <div style="max-width: 1200px; margin: 0 auto;">
+                        <h2 style="margin-bottom: 24px; color: #1f2937;">🗄️ Analyze</h2>
+                        <div style="background: white; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <p style="color: #6b7280; margin-bottom: 24px;">Analyze your data with advanced analytics and insights.</p>
+                            <div style="padding: 20px; background: #f9fafb; border-radius: 8px; border: 2px dashed #d1d5db; text-align: center;">
+                                <p style="color: #6b7280;">Analyze functionality coming soon...</p>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'predict': `
+                    <div style="max-width: 1200px; margin: 0 auto;">
+                        <h2 style="margin-bottom: 24px; color: #1f2937;">🗄️ Predict</h2>
+                        <div style="background: white; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <p style="color: #6b7280; margin-bottom: 24px;">Build predictive models and forecasts from your data.</p>
+                            <div style="padding: 20px; background: #f9fafb; border-radius: 8px; border: 2px dashed #d1d5db; text-align: center;">
+                                <p style="color: #6b7280;">Predict functionality coming soon...</p>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'tell-the-story': `
+                    <div style="max-width: 1200px; margin: 0 auto;">
+                        <h2 style="margin-bottom: 24px; color: #1f2937;">🗄️ Tell the Story</h2>
+                        <div style="background: white; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <p style="color: #6b7280; margin-bottom: 24px;">Create compelling narratives and stories from your data insights.</p>
+                            <div style="padding: 20px; background: #f9fafb; border-radius: 8px; border: 2px dashed #d1d5db; text-align: center;">
+                                <p style="color: #6b7280;">Tell the Story functionality coming soon...</p>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'help': `
+                    <div style="max-width: 1200px; margin: 0 auto;">
+                        <h2 style="margin-bottom: 24px; color: #1f2937;">❓ Help</h2>
+                        <div style="background: white; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <p style="color: #6b7280; margin-bottom: 24px;">Get help and documentation for using SaarInsights.</p>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                                <div style="padding: 24px; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;">
+                                    <h3 style="margin-bottom: 12px; color: #1f2937;">📚 Documentation</h3>
+                                    <p style="color: #6b7280; font-size: 14px;">Browse user guides and API documentation</p>
+                                </div>
+                                <div style="padding: 24px; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;">
+                                    <h3 style="margin-bottom: 12px; color: #1f2937;">💬 Support</h3>
+                                    <p style="color: #6b7280; font-size: 14px;">Contact support or submit a ticket</p>
+                                </div>
+                                <div style="padding: 24px; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;">
+                                    <h3 style="margin-bottom: 12px; color: #1f2937;">🎓 Tutorials</h3>
+                                    <p style="color: #6b7280; font-size: 14px;">Watch video tutorials and learn best practices</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'agents': `
+                    <div style="max-width: 1200px; margin: 0 auto;">
+                        <h2 style="margin-bottom: 24px; color: #1f2937;">🤖 Agents</h2>
+                        <div style="background: white; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <p style="color: #6b7280; margin-bottom: 24px;">Manage and monitor your AI agents for data transformation.</p>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+                                <div style="padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+                                    <h3 style="margin-bottom: 8px; color: #1f2937;">Schema Understanding</h3>
+                                    <p style="color: #6b7280; font-size: 14px; margin-bottom: 12px;">Analyzes Bronze schemas</p>
+                                    <span style="display: inline-block; padding: 4px 12px; background: #dbeafe; color: #1e40af; border-radius: 4px; font-size: 12px; font-weight: 600;">Active</span>
+                                </div>
+                                <div style="padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+                                    <h3 style="margin-bottom: 8px; color: #1f2937;">Data Vault Modeling</h3>
+                                    <p style="color: #6b7280; font-size: 14px; margin-bottom: 12px;">Generates Hub/Link/Satellite designs</p>
+                                    <span style="display: inline-block; padding: 4px 12px; background: #dbeafe; color: #1e40af; border-radius: 4px; font-size: 12px; font-weight: 600;">Active</span>
+                                </div>
+                                <div style="padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+                                    <h3 style="margin-bottom: 8px; color: #1f2937;">ETL Code Generation</h3>
+                                    <p style="color: #6b7280; font-size: 14px; margin-bottom: 12px;">Creates dbt models</p>
+                                    <span style="display: inline-block; padding: 4px 12px; background: #dbeafe; color: #1e40af; border-radius: 4px; font-size: 12px; font-weight: 600;">Active</span>
+                                </div>
+                                <div style="padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+                                    <h3 style="margin-bottom: 8px; color: #1f2937;">Query Monitoring</h3>
+                                    <p style="color: #6b7280; font-size: 14px; margin-bottom: 12px;">Tracks query patterns</p>
+                                    <span style="display: inline-block; padding: 4px 12px; background: #f3f4f6; color: #6b7280; border-radius: 4px; font-size: 12px; font-weight: 600;">Inactive</span>
+                                </div>
+                                <div style="padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+                                    <h3 style="margin-bottom: 8px; color: #1f2937;">Gold Optimization</h3>
+                                    <p style="color: #6b7280; font-size: 14px; margin-bottom: 12px;">Optimizes Gold layer</p>
+                                    <span style="display: inline-block; padding: 4px 12px; background: #f3f4f6; color: #6b7280; border-radius: 4px; font-size: 12px; font-weight: 600;">Inactive</span>
+                                </div>
+                                <div style="padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+                                    <h3 style="margin-bottom: 8px; color: #1f2937;">Anomaly Detection</h3>
+                                    <p style="color: #6b7280; font-size: 14px; margin-bottom: 12px;">Monitors data quality</p>
+                                    <span style="display: inline-block; padding: 4px 12px; background: #f3f4f6; color: #6b7280; border-radius: 4px; font-size: 12px; font-weight: 600;">Inactive</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'pipelines': `
+                    <div style="max-width: 1200px; margin: 0 auto;">
+                        <h2 style="margin-bottom: 24px; color: #1f2937;">🔀 Pipelines</h2>
+                        <div style="background: white; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <p style="color: #6b7280; margin-bottom: 24px;">Monitor and manage your data transformation pipelines.</p>
+                            <div style="padding: 20px; background: #f9fafb; border-radius: 8px; border: 2px dashed #d1d5db; text-align: center;">
+                                <p style="color: #6b7280;">No pipelines configured yet. Create your first pipeline from the Build section.</p>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'settings': `
+                    <div style="max-width: 1200px; margin: 0 auto;">
+                        <h2 style="margin-bottom: 24px; color: #1f2937;">⚙️ Settings</h2>
+                        <div style="background: white; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <div style="margin-bottom: 32px;">
+                                <h3 style="margin-bottom: 16px; color: #1f2937;">Database Configuration</h3>
+                                <p style="color: #6b7280; font-size: 14px;">Configure your data warehouse connections.</p>
+                            </div>
+                            <div style="margin-bottom: 32px;">
+                                <h3 style="margin-bottom: 16px; color: #1f2937;">LLM Configuration</h3>
+                                <p style="color: #6b7280; font-size: 14px;">Manage your AI model API keys and settings.</p>
+                            </div>
+                            <div style="margin-bottom: 32px;">
+                                <h3 style="margin-bottom: 16px; color: #1f2937;">Agent Settings</h3>
+                                <p style="color: #6b7280; font-size: 14px;">Configure agent behavior and parameters.</p>
+                            </div>
+                        </div>
+                    </div>
+                `
+            };
+            
+            pageContent.innerHTML = pageContents[page] || '<p>Page content coming soon...</p>';
+            container.appendChild(pageContent);
+        }
+
+        function addMessage(text, isUser = false) {
+            const messagesDiv = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user' : 'bot'}`;
+            messageDiv.innerHTML = `<div class="message-content">${text}</div>`;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function displayData(data) {
+            const dataContent = document.getElementById('dataContent');
+            const refreshButton = document.getElementById('refreshButton');
+
+            if (!data || !data.data || data.data.length === 0) {
+                dataContent.innerHTML = `
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                        <p>No data to display</p>
+                    </div>
+                `;
+                refreshButton.style.display = 'none';
+                return;
+            }
+
+            let html = '';
+
+            // Add summary
+            if (data.summary) {
+                html += `<div class="summary">${data.summary}</div>`;
+            }
+
+            // Build table
+            html += '<div class="data-table"><table><thead><tr>';
+            data.columns.forEach(col => {
+                html += `<th>${escapeHtml(col)}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            data.data.forEach(row => {
+                html += '<tr>';
+                data.columns.forEach(col => {
+                    const value = row[col] !== null && row[col] !== undefined ? row[col] : '';
+                    html += `<td>${escapeHtml(String(value))}</td>`;
+                });
+                html += '</tr>';
+            });
+
+            html += '</tbody></table></div>';
+
+            // Add metadata
+            if (data.metadata && data.metadata.has_more) {
+                html += `<div style="padding: 15px; text-align: center; color: #6b7280; font-size: 14px;">
+                    ... and ${data.metadata.total_rows - data.metadata.displayed_rows} more rows
+                </div>`;
+            }
+
+            dataContent.innerHTML = html;
+
+            // Show refresh button if monitor_id exists
+            if (data.monitor_id) {
+                currentMonitorId = data.monitor_id;
+                refreshButton.style.display = 'flex';
+            }
+
+            // Store table info for history
+            if (data.metadata) {
+                currentTableInfo = {
+                    schema: data.metadata.schema_name || 'public',
+                    table: data.metadata.table_name
+                };
+                // Load history when table is viewed
+                if (currentTableInfo.table) {
+                    loadHistory();
+                }
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const sendButton = document.getElementById('sendButton');
+            const query = input.value.trim();
+
+            if (!query) return;
+
+            // Disable input
+            input.disabled = true;
+            sendButton.disabled = true;
+            sendButton.innerHTML = '<div class="loading"></div>';
+
+            // Add user message
+            addMessage(query, true);
+            input.value = '';
+
+            try {
+                const response = await fetch('/api/chatbot/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        schema: 'public'
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Add bot response
+                    addMessage(`Found data from ${result.query_understanding?.table_name || 'table'}. Displaying ${result.metadata?.displayed_rows || 0} rows.`);
+                    
+                    // Store table info for history
+                    if (result.metadata) {
+                        currentTableInfo = {
+                            schema: result.metadata.schema_name || 'public',
+                            table: result.metadata.table_name
+                        };
+                    }
+                    
+                    // Display data
+                    displayData(result);
+                } else {
+                    addMessage(`❌ Error: ${result.error || 'Something went wrong'}`);
+                }
+            } catch (error) {
+                addMessage(`❌ Error: ${error.message}`);
+            } finally {
+                // Re-enable input
+                input.disabled = false;
+                sendButton.disabled = false;
+                sendButton.innerHTML = 'Send';
+                input.focus();
+            }
+        }
+
+        async function refreshData() {
+            if (!currentMonitorId) return;
+
+            const refreshButton = document.getElementById('refreshButton');
+            refreshButton.disabled = true;
+            refreshButton.innerHTML = '<div class="loading"></div>';
+
+            try {
+                const response = await fetch(`/api/chatbot/refresh/${currentMonitorId}`);
+                const result = await response.json();
+
+                if (result.success) {
+                    displayData(result);
+                    addMessage('🔄 Data refreshed!', false);
+                } else {
+                    addMessage(`❌ Refresh error: ${result.error}`, false);
+                }
+            } catch (error) {
+                addMessage(`❌ Error: ${error.message}`, false);
+            } finally {
+                refreshButton.disabled = false;
+                refreshButton.innerHTML = '🔄 Refresh';
+            }
+        }
+
+        // Auto-refresh every 5 hours if monitor is active
+        setInterval(async () => {
+            if (currentMonitorId) {
+                try {
+                    const response = await fetch(`/api/chatbot/refresh/${currentMonitorId}`);
+                    const result = await response.json();
+                    if (result.success) {
+                        displayData(result);
+                    }
+                } catch (error) {
+                    console.error('Auto-refresh error:', error);
+                }
+            }
+        }, 18000000); // 5 hours (5 * 60 * 60 * 1000 milliseconds)
+
+        // Tab switching
+        function showTab(tabName) {
+            // Hide all tabs
+            document.getElementById('dataTabContent').classList.remove('active');
+            document.getElementById('historyTabContent').classList.remove('active');
+            document.getElementById('dataTab').classList.remove('active');
+            document.getElementById('historyTab').classList.remove('active');
+
+            // Show selected tab
+            if (tabName === 'data') {
+                document.getElementById('dataTabContent').classList.add('active');
+                document.getElementById('dataTab').classList.add('active');
+            } else if (tabName === 'history') {
+                document.getElementById('historyTabContent').classList.add('active');
+                document.getElementById('historyTab').classList.add('active');
+                // Load history when switching to history tab
+                loadHistory();
+            }
+        }
+
+        // Load and display history
+        async function loadHistory() {
+            const historyContent = document.getElementById('historyContent');
+
+            if (!currentTableInfo || !currentTableInfo.table) {
+                historyContent.innerHTML = `
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <p>View a table first to see its history</p>
+                    </div>
+                `;
+                return;
+            }
+
+            try {
+                historyContent.innerHTML = '<div style="padding: 20px; text-align: center;"><div class="loading"></div><p>Loading history...</p></div>';
+
+                const response = await fetch(`/api/chatbot/history/${currentTableInfo.schema}/${currentTableInfo.table}?limit=20`);
+                const result = await response.json();
+
+                if (result.success && result.snapshots && result.snapshots.length > 0) {
+                    let html = `<div style="padding: 20px;">
+                        <h3 style="margin-bottom: 20px; color: #1f2937;">📜 History for ${currentTableInfo.table}</h3>
+                    `;
+
+                    result.snapshots.forEach(snapshot => {
+                        const date = new Date(snapshot.timestamp);
+                        const formattedDate = date.toLocaleString();
+                        const badgeClass = snapshot.change_type === 'initial' ? 'initial' : 
+                                         snapshot.change_type === 'update' ? 'update' : 'manual_refresh';
+
+                        html += `
+                            <div class="history-item" onclick="viewSnapshot(${snapshot.snapshot_id})">
+                                <div class="history-item-header">
+                                    <div>
+                                        <div class="history-item-title">Snapshot #${snapshot.snapshot_id}</div>
+                                        <div class="history-item-meta">${formattedDate}</div>
+                                    </div>
+                                    <div>
+                                        <span class="history-item-badge ${badgeClass}">${snapshot.change_type || 'update'}</span>
+                                    </div>
+                                </div>
+                                <div style="color: #6b7280; font-size: 14px;">
+                                    ${snapshot.row_count} rows captured
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    html += '</div>';
+                    historyContent.innerHTML = html;
+                } else {
+                    historyContent.innerHTML = `
+                        <div class="empty-state">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <p>No history available for this table yet</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                historyContent.innerHTML = `
+                    <div class="empty-state">
+                        <p>❌ Error loading history: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // View a specific snapshot
+        async function viewSnapshot(snapshotId) {
+            if (!currentTableInfo) return;
+
+            try {
+                const response = await fetch(`/api/chatbot/snapshot/${snapshotId}`);
+                const result = await response.json();
+
+                if (result.success && result.snapshot) {
+                    // Switch to data tab and display snapshot
+                    showTab('data');
+                    
+                    const snapshotData = result.snapshot.snapshot_data || [];
+                    const columns = snapshotData.length > 0 ? Object.keys(snapshotData[0]) : [];
+
+                    displayData({
+                        data: snapshotData,
+                        columns: columns,
+                        summary: `Historical snapshot #${snapshotId} from ${new Date(result.snapshot.timestamp).toLocaleString()}`,
+                        metadata: {
+                            table_name: currentTableInfo.table,
+                            schema_name: currentTableInfo.schema,
+                            total_rows: result.snapshot.row_count,
+                            displayed_rows: snapshotData.length
+                        }
+                    });
+                }
+            } catch (error) {
+                addMessage(`❌ Error loading snapshot: ${error.message}`, false);
+            }
+        }
+
+        // Initialize page on load - show Visualize content
+        window.addEventListener('DOMContentLoaded', function() {
+            // Hide main content (chatbot interface) initially
+            const mainContent = document.querySelector('.main-content');
+            if (mainContent) {
+                mainContent.style.display = 'none';
+            }
+            // Show Visualize content
+            showPageContent('dashboard');
+        });
+    </script>
+</body>
+</html>
+
