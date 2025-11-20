@@ -19,6 +19,7 @@ class BaseAgent:
         name: str,
         llm: Optional[BaseChatModel] = None,
         temperature: Optional[float] = None,
+        allow_no_llm: bool = False,
     ):
         """
         Initialize base agent.
@@ -27,10 +28,18 @@ class BaseAgent:
             name: Agent name
             llm: Optional LLM instance (will create if not provided)
             temperature: LLM temperature (defaults to settings.agent_temperature)
+            allow_no_llm: If True, don't raise error if LLM can't be created (default: False)
         """
         self.name = name
         self.temperature = temperature or settings.agent_temperature
-        self.llm = llm or self._create_llm()
+        try:
+            self.llm = llm or self._create_llm()
+        except (ValueError, Exception) as e:
+            if allow_no_llm:
+                self.llm = None
+                logger.warning(f"Agent {name} initialized without LLM", error=str(e))
+            else:
+                raise
         self.logger = logger.bind(agent=name)
         
     def _create_llm(self) -> BaseChatModel:

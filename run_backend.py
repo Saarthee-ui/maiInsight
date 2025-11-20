@@ -12,15 +12,18 @@ sys.path.insert(0, str(backend_path))
 original_cwd = os.getcwd()
 os.chdir(backend_path)
 
-# Import app and background monitoring setup
-from app import app, active_monitors, background_monitor
-import threading
-
-# Start background monitoring thread
-monitor_thread = threading.Thread(target=background_monitor, daemon=True)
-monitor_thread.start()
+# Import app
+from app import app
 
 # Run Flask app
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    print("\n" + "="*60)
+    print("Starting Mailytics Backend & Frontend Server")
+    print("="*60)
+    print("\nFrontend URL: http://localhost:5000")
+    print("Backend API: http://localhost:5000/api/")
+    print("\nOpen http://localhost:5000 in your browser")
+    print("Press Ctrl+C to stop the server")
+    print("="*60 + "\n")
+    app.run(debug=True, host="0.0.0.0", port=5000, use_reloader=False)
 

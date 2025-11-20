@@ -642,6 +642,10 @@
             if (page === 'data-onboarding') {
                 // Show chatbot interface for data-onboarding
                 mainContent.style.display = 'flex';
+            } else if (page === 'build') {
+                // Show build section content
+                mainContent.style.display = 'none';
+                showPageContent(page);
             } else {
                 // For other pages, show placeholder content
                 mainContent.style.display = 'none';
@@ -660,6 +664,12 @@
             const pageContent = document.createElement('div');
             pageContent.id = 'pageContent';
             pageContent.style.cssText = 'flex: 1; padding: 0; overflow: hidden; background: #f9fafb; display: flex; flex-direction: column;';
+            
+            // Initialize build section if needed
+            if (page === 'build' && buildSessionId) {
+                // Optionally reset when navigating to build section
+                // buildSessionId = null;
+            }
             
             const pageContents = {
                 'dashboard': `
@@ -700,71 +710,56 @@
                     </div>
                 `,
                 'build': `
-                    <div style="width: 100%; height: 100%; padding: 20px; background: #f3f4f6; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; overflow: hidden;">
-                        <!-- Top Row: Talk to AI Data Engineer and Context -->
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; flex: 0 0 35%; min-height: 0;">
-                            <!-- Top Left: Talk to AI Data Engineer -->
-                            <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; padding: 16px; overflow: hidden;">
+                    <div style="width: 100%; height: 100%; padding: 20px; background: #f3f4f6; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; overflow-y: auto;">
+                        <!-- Top Row: Build Chatbot and Context -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; flex: 0 0 auto; min-height: 400px; max-height: 50vh;">
+                            <!-- Top Left: Build Chatbot -->
+                            <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; padding: 16px; overflow: hidden; height: 100%;">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-shrink: 0;">
                                     <h3 style="margin: 0; color: #1f2937; font-size: 16px; font-weight: 600;">Talk to AI Data Engineer</h3>
-                                    <div style="display: flex; gap: 6px;">
-                                        <select style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: white; color: #6b7280; cursor: pointer;">
-                                            <option>Sprint</option>
-                                        </select>
-                                        <select style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: white; color: #6b7280; cursor: pointer;">
-                                            <option>Aug</option>
-                                        </select>
-                                        <select style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: white; color: #6b7280; cursor: pointer;">
-                                            <option>2023</option>
-                                        </select>
+                                    <button id="resetBuildChat" onclick="resetBuildChat()" style="padding: 4px 12px; background: #f3f4f6; color: #1f2937; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; cursor: pointer;">Reset</button>
+                                </div>
+                                <div id="buildChatMessages" style="flex: 1; border: 1px solid #e5e7eb; border-radius: 4px; background: #f9fafb; padding: 12px; overflow-y: auto; margin-bottom: 12px; min-height: 0;">
+                                    <div style="padding: 8px; background: white; border-radius: 4px; margin-bottom: 8px;">
+                                        <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">AI Assistant</div>
+                                        <div style="font-size: 14px; color: #1f2937;">Hello! What would you like to build? For example: "I want to create a Sales Dashboard"</div>
                                     </div>
                                 </div>
-                                <div style="flex: 1; border: 1px solid #e5e7eb; border-radius: 4px; background: white; padding: 12px; overflow-y: auto; min-height: 0;">
-                                    <textarea style="width: 100%; height: 100%; border: none; outline: none; resize: none; font-family: inherit; font-size: 14px; color: #1f2937;" placeholder="Type your message here..."></textarea>
+                                <div style="display: flex; gap: 8px; flex-shrink: 0;">
+                                    <input type="text" id="buildChatInput" placeholder="Type your message here..." style="flex: 1; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; outline: none;" onkeypress="if(event.key === 'Enter') sendBuildMessage()">
+                                    <button onclick="sendBuildMessage()" id="buildSendButton" style="padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer;">Send</button>
                                 </div>
                             </div>
 
-                            <!-- Top Right: Context -->
-                            <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; padding: 16px; overflow: hidden;">
+                            <!-- Top Right: Context/Summary -->
+                            <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; padding: 16px; overflow: hidden; height: 100%;">
                                 <h3 style="margin: 0 0 12px 0; color: #1f2937; font-size: 16px; font-weight: 600; flex-shrink: 0;">Context</h3>
-                                <div style="flex: 1; border: 1px solid #e5e7eb; border-radius: 4px; background: white; padding: 12px; overflow-y: auto; min-height: 0;">
-                                    <textarea style="width: 100%; height: 100%; border: none; outline: none; resize: none; font-family: inherit; font-size: 14px; color: #1f2937;" placeholder="Add context here..."></textarea>
+                                <div id="buildSummary" style="flex: 1; border: 1px solid #e5e7eb; border-radius: 4px; background: #f9fafb; padding: 12px; overflow-y: auto; min-height: 0;">
+                                    <div style="color: #6b7280; font-size: 14px; text-align: center; padding: 20px;">No build in progress</div>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Middle: Output -->
-                        <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; padding: 16px; flex: 0 0 35%; min-height: 0; overflow: hidden;">
+                        <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; padding: 16px; flex: 0 0 auto; min-height: 200px; max-height: 300px;">
                             <h3 style="margin: 0 0 12px 0; color: #1f2937; font-size: 16px; font-weight: 600; flex-shrink: 0;">Output</h3>
-                            <div style="flex: 1; border: 1px solid #e5e7eb; border-radius: 4px; background: white; padding: 12px; overflow-y: auto; margin-bottom: 12px; min-height: 0;">
-                                <textarea style="width: 100%; height: 100%; border: none; outline: none; resize: none; font-family: inherit; font-size: 14px; color: #1f2937;" placeholder="Output will appear here..."></textarea>
+                            <div id="buildOutput" style="flex: 1; border: 1px solid #e5e7eb; border-radius: 4px; background: #f9fafb; padding: 12px; overflow-y: auto; margin-bottom: 12px; min-height: 0;">
+                                <div style="color: #6b7280; font-size: 14px;">Output will appear here as you progress through the build process...</div>
                             </div>
                             <!-- Buttons at bottom-right of Output panel -->
                             <div style="display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0;">
-                                <button style="padding: 8px 20px; background: #10b981; color: white; border: none; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#059669';" onmouseout="this.style.background='#10b981';">Satisfied</button>
-                                <button style="padding: 8px 20px; background: #ef4444; color: white; border: none; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#dc2626';" onmouseout="this.style.background='#ef4444';">Not Satisfied</button>
+                                <button id="buildSatisfied" style="padding: 8px 20px; background: #10b981; color: white; border: none; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer; display: none;" onclick="handleBuildSatisfied()">Satisfied</button>
+                                <button id="buildNotSatisfied" style="padding: 8px 20px; background: #ef4444; color: white; border: none; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer; display: none;" onclick="handleBuildNotSatisfied()">Not Satisfied</button>
                             </div>
                         </div>
 
                         <!-- Bottom: Review Pane -->
-                        <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; padding: 16px; flex: 0 0 30%; min-height: 0; overflow: hidden;">
+                        <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; padding: 16px; flex: 0 0 auto; min-height: 200px; max-height: 300px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-shrink: 0;">
                                 <h3 style="margin: 0; color: #1f2937; font-size: 16px; font-weight: 600;">Review Pane</h3>
-                                <div style="display: flex; gap: 8px; align-items: center;">
-                                    <span style="color: #6b7280; font-size: 14px;">22 Aug 2023</span>
-                                    <span style="color: #6b7280; font-size: 16px;">📅</span>
-                                    <button style="padding: 4px 12px; background: #f3f4f6; color: #1f2937; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#e5e7eb';" onmouseout="this.style.background='#f3f4f6';">Show</button>
-                                    <span style="color: #6b7280; font-size: 12px; cursor: pointer;">▼</span>
-                                </div>
                             </div>
-                            <div style="flex: 1; border-top: 1px solid #e5e7eb; padding-top: 12px; overflow-y: auto; min-height: 0;">
-                                <!-- Horizontal lines for list/log -->
-                                <div style="height: 1px; background: #e5e7eb; margin-bottom: 12px;"></div>
-                                <div style="height: 1px; background: #e5e7eb; margin-bottom: 12px;"></div>
-                                <div style="height: 1px; background: #e5e7eb; margin-bottom: 12px;"></div>
-                                <div style="height: 1px; background: #e5e7eb; margin-bottom: 12px;"></div>
-                                <div style="height: 1px; background: #e5e7eb; margin-bottom: 12px;"></div>
-                                <div style="height: 1px; background: #e5e7eb;"></div>
+                            <div id="buildReviewPane" style="flex: 1; border-top: 1px solid #e5e7eb; padding-top: 12px; overflow-y: auto; min-height: 0;">
+                                <div style="color: #6b7280; font-size: 14px; text-align: center; padding: 20px;">Review information will appear here</div>
                             </div>
                         </div>
                     </div>
@@ -1287,6 +1282,289 @@
             // Show Visualize content
             showPageContent('dashboard');
         });
+
+        // ========== Build Section Functions ==========
+        let buildSessionId = null;
+
+        // Initialize build session ID
+        function getBuildSessionId() {
+            if (!buildSessionId) {
+                buildSessionId = 'build_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            }
+            return buildSessionId;
+        }
+
+        // Send build message
+        async function sendBuildMessage() {
+            const input = document.getElementById('buildChatInput');
+            const sendButton = document.getElementById('buildSendButton');
+            const messagesContainer = document.getElementById('buildChatMessages');
+            const query = input.value.trim();
+
+            if (!query) return;
+
+            // Disable input
+            input.disabled = true;
+            sendButton.disabled = true;
+            sendButton.innerHTML = '<div class="loading"></div>';
+
+            // Add user message
+            addBuildMessage(query, true);
+            input.value = '';
+
+            try {
+                const response = await fetch('/api/build/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: query,
+                        session_id: getBuildSessionId()
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Add bot response
+                    addBuildMessage(result.message, false);
+                    
+                    // Update summary
+                    updateBuildSummary(result.data, result.stage);
+                    
+                    // Update output
+                    updateBuildOutput(result);
+                    
+                    // Show/hide satisfaction buttons based on stage
+                    if (result.stage === 'complete') {
+                        document.getElementById('buildSatisfied').style.display = 'none';
+                        document.getElementById('buildNotSatisfied').style.display = 'none';
+                    } else if (result.stage === 'confirmation') {
+                        document.getElementById('buildSatisfied').style.display = 'inline-block';
+                        document.getElementById('buildNotSatisfied').style.display = 'inline-block';
+                    } else {
+                        document.getElementById('buildSatisfied').style.display = 'none';
+                        document.getElementById('buildNotSatisfied').style.display = 'none';
+                    }
+                    
+                    // Display hints if available
+                    if (result.hints && result.hints.length > 0) {
+                        displayBuildHints(result.hints);
+                    }
+                } else {
+                    addBuildMessage(`❌ Error: ${result.error || 'Something went wrong'}`, false);
+                }
+            } catch (error) {
+                addBuildMessage(`❌ Error: ${error.message}`, false);
+            } finally {
+                // Re-enable input
+                input.disabled = false;
+                sendButton.disabled = false;
+                sendButton.innerHTML = 'Send';
+                input.focus();
+            }
+        }
+
+        // Add message to build chat
+        function addBuildMessage(message, isUser) {
+            const messagesContainer = document.getElementById('buildChatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.style.cssText = 'padding: 8px; background: white; border-radius: 4px; margin-bottom: 8px;';
+            
+            const roleDiv = document.createElement('div');
+            roleDiv.style.cssText = 'font-size: 12px; color: #6b7280; margin-bottom: 4px;';
+            roleDiv.textContent = isUser ? 'You' : 'AI Assistant';
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.style.cssText = 'font-size: 14px; color: #1f2937; white-space: pre-wrap;';
+            contentDiv.textContent = message;
+            
+            messageDiv.appendChild(roleDiv);
+            messageDiv.appendChild(contentDiv);
+            messagesContainer.appendChild(messageDiv);
+            
+            // Scroll to bottom
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // Update build summary
+        function updateBuildSummary(data, stage) {
+            const summaryContainer = document.getElementById('buildSummary');
+            
+            if (!data || Object.keys(data).length === 0) {
+                summaryContainer.innerHTML = '<div style="color: #6b7280; font-size: 14px; text-align: center; padding: 20px;">No build in progress</div>';
+                return;
+            }
+            
+            let html = '<div style="padding: 12px;">';
+            
+            if (data.intent) {
+                html += `<div style="margin-bottom: 12px;"><strong style="color: #1f2937;">Intent:</strong><div style="color: #6b7280; font-size: 14px; margin-top: 4px;">${escapeHtml(data.intent)}</div></div>`;
+            }
+            
+            if (data.databases && data.databases.length > 0) {
+                html += `<div style="margin-bottom: 12px;"><strong style="color: #1f2937;">Databases:</strong><div style="color: #6b7280; font-size: 14px; margin-top: 4px;">${data.databases.join(', ')}</div></div>`;
+            }
+            
+            if (data.transformation_name) {
+                html += `<div style="margin-bottom: 12px;"><strong style="color: #1f2937;">Transformation:</strong><div style="color: #6b7280; font-size: 14px; margin-top: 4px;">${escapeHtml(data.transformation_name)}</div></div>`;
+            }
+            
+            if (data.connection_details && Object.keys(data.connection_details).length > 0) {
+                html += `<div style="margin-bottom: 12px;"><strong style="color: #1f2937;">Connection:</strong><div style="color: #6b7280; font-size: 14px; margin-top: 4px;">Configured</div></div>`;
+            } else if (data.use_existing_connection) {
+                html += `<div style="margin-bottom: 12px;"><strong style="color: #1f2937;">Connection:</strong><div style="color: #6b7280; font-size: 14px; margin-top: 4px;">Using existing</div></div>`;
+            }
+            
+            html += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;"><strong style="color: #1f2937;">Stage:</strong><div style="color: #667eea; font-size: 14px; margin-top: 4px; text-transform: capitalize;">${stage || 'Initial'}</div></div>`;
+            
+            html += '</div>';
+            summaryContainer.innerHTML = html;
+        }
+
+        // Update build output
+        function updateBuildOutput(result) {
+            const outputContainer = document.getElementById('buildOutput');
+            
+            if (result.stage === 'complete') {
+                let html = '<div style="padding: 12px;">';
+                html += '<div style="color: #10b981; font-size: 16px; font-weight: 600; margin-bottom: 12px;">✅ Setup Complete!</div>';
+                
+                if (result.build_id) {
+                    html += `<div style="color: #1f2937; font-size: 14px; margin-bottom: 8px;">Build ID: ${result.build_id}</div>`;
+                }
+                
+                if (result.data && result.data.transformation_name) {
+                    html += `<div style="color: #6b7280; font-size: 14px;">Transformation "${result.data.transformation_name}" has been saved to the buildRetrieval database.</div>`;
+                }
+                
+                html += '</div>';
+                outputContainer.innerHTML = html;
+            } else {
+                // Show current progress
+                let html = '<div style="padding: 12px;">';
+                html += `<div style="color: #1f2937; font-size: 14px; white-space: pre-wrap;">${escapeHtml(result.message || 'Processing...')}</div>`;
+                html += '</div>';
+                outputContainer.innerHTML = html;
+            }
+        }
+
+        // Display build hints
+        function displayBuildHints(hints) {
+            const outputContainer = document.getElementById('buildOutput');
+            if (!hints || hints.length === 0) return;
+            
+            let currentHtml = outputContainer.innerHTML;
+            let hintsHtml = '<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;"><div style="color: #1f2937; font-size: 14px; font-weight: 600; margin-bottom: 8px;">💡 Suggestions:</div><ul style="margin: 0; padding-left: 20px; color: #6b7280; font-size: 14px;">';
+            
+            hints.forEach((hint, index) => {
+                const hintId = 'buildHint_' + index;
+                hintsHtml += `<li id="${hintId}" style="margin-bottom: 4px; cursor: pointer; color: #667eea;" onclick="useBuildHint('${hint.replace(/'/g, "\\'")}')">${escapeHtml(hint)}</li>`;
+            });
+            
+            hintsHtml += '</ul></div>';
+            outputContainer.innerHTML = currentHtml + hintsHtml;
+        }
+
+        // Use a hint
+        function useBuildHint(hint) {
+            const input = document.getElementById('buildChatInput');
+            input.value = hint;
+            input.focus();
+        }
+
+        // Make functions globally accessible
+        window.sendBuildMessage = sendBuildMessage;
+        window.handleBuildSatisfied = handleBuildSatisfied;
+        window.handleBuildNotSatisfied = handleBuildNotSatisfied;
+        window.useBuildHint = useBuildHint;
+
+        // Handle build satisfied
+        async function handleBuildSatisfied() {
+            await sendBuildMessageWithText('yes');
+        }
+
+        // Handle build not satisfied
+        async function handleBuildNotSatisfied() {
+            await sendBuildMessageWithText('no, I want to make changes');
+        }
+
+        // Send build message with specific text
+        async function sendBuildMessageWithText(text) {
+            const input = document.getElementById('buildChatInput');
+            input.value = text;
+            await sendBuildMessage();
+        }
+
+        // Reset build chat
+        async function resetBuildChat() {
+            if (!confirm('Are you sure you want to reset the build conversation? This will clear all progress.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/build/reset', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: getBuildSessionId()
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Clear messages
+                    document.getElementById('buildChatMessages').innerHTML = `
+                        <div style="padding: 8px; background: white; border-radius: 4px; margin-bottom: 8px;">
+                            <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">AI Assistant</div>
+                            <div style="font-size: 14px; color: #1f2937;">Hello! What would you like to build? For example: "I want to create a Sales Dashboard"</div>
+                        </div>
+                    `;
+                    
+                    // Clear summary
+                    document.getElementById('buildSummary').innerHTML = '<div style="color: #6b7280; font-size: 14px; text-align: center; padding: 20px;">No build in progress</div>';
+                    
+                    // Clear output
+                    document.getElementById('buildOutput').innerHTML = '<div style="color: #6b7280; font-size: 14px;">Output will appear here as you progress through the build process...</div>';
+                    
+                    // Hide buttons
+                    document.getElementById('buildSatisfied').style.display = 'none';
+                    document.getElementById('buildNotSatisfied').style.display = 'none';
+                    
+                    // Reset session ID
+                    buildSessionId = null;
+                } else {
+                    alert(`Error: ${result.error || 'Failed to reset'}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        // Initialize build chatbot (called when navigating to build page)
+        function initializeBuildChatbot() {
+            // Reset session if needed
+            buildSessionId = null;
+            
+            // Ensure initial message is shown
+            const messagesContainer = document.getElementById('buildChatMessages');
+            if (messagesContainer && messagesContainer.children.length === 0) {
+                messagesContainer.innerHTML = `
+                    <div style="padding: 8px; background: white; border-radius: 4px; margin-bottom: 8px;">
+                        <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">AI Assistant</div>
+                        <div style="font-size: 14px; color: #1f2937;">Hello! What would you like to build? For example: "I want to create a Sales Dashboard"</div>
+                    </div>
+                `;
+            }
+        }
+
+        // Make functions globally accessible
+        window.resetBuildChat = resetBuildChat;
+        window.initializeBuildChatbot = initializeBuildChatbot;
     </script>
 </body>
 </html>

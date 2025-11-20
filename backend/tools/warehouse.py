@@ -114,6 +114,33 @@ class WarehouseConnection:
         inspector = inspect(self.engine)
         return inspector.get_table_names(schema=schema_name)
     
+    def list_schemas(self) -> List[str]:
+        """List all available schemas/databases."""
+        if not self.engine:
+            raise RuntimeError("Warehouse not connected")
+        
+        try:
+            if settings.warehouse_type.lower() == "postgres":
+                # PostgreSQL: query information_schema
+                result = self.execute_query("""
+                    SELECT schema_name 
+                    FROM information_schema.schemata 
+                    WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast', 'pg_temp_1', 'pg_toast_temp_1')
+                    ORDER BY schema_name
+                """)
+                return [row['schema_name'] for row in result]
+            elif settings.warehouse_type.lower() == "snowflake":
+                # Snowflake: use SHOW SCHEMAS
+                result = self.execute_query("SHOW SCHEMAS")
+                return [row['name'] for row in result if row.get('name')]
+            else:
+                # Fallback: try inspector
+                inspector = inspect(self.engine)
+                return inspector.get_schema_names()
+        except Exception as e:
+            logger.warning("Failed to list schemas", error=str(e))
+            return []
+    
     def execute_query(self, query: str) -> List[Dict[str, Any]]:
         """Execute a SQL query and return results."""
         if not self.engine:
