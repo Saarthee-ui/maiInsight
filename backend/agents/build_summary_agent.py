@@ -1,10 +1,11 @@
-"""Build Summary Agent - Guides users through creating transformation flows."""
+"""RAG Build Agent - Guides users through creating transformation flows using RAG documents, vectors, and LLM."""
 
 from typing import Dict, List, Optional, Any
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from agents.base_agent import BaseAgent
-from tools.warehouse import warehouse
+from storage.document_vector_store import DocumentVectorStore
+from storage.build_vector_store import BuildVectorStore
 import structlog
 from enum import Enum
 
@@ -12,24 +13,64 @@ logger = structlog.get_logger()
 json_parser = JsonOutputParser()
 
 
+def invoke_with_timeout(chain, input_data, timeout=30):
+    """Invoke a chain with timeout to prevent hanging."""
+    import threading
+    result_container = [None]
+    exception_container = [None]
+    
+    def invoke_chain():
+        try:
+            result_container[0] = chain.invoke(input_data)
+        except Exception as e:
+            exception_container[0] = e
+    
+    thread = threading.Thread(target=invoke_chain)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout)
+    
+    if thread.is_alive():
+        raise TimeoutError(f"LLM call timed out after {timeout} seconds")
+    
+    if exception_container[0]:
+        raise exception_container[0]
+    
+    return result_container[0]
+
+
+def get_warehouse():
+    """Lazy import of warehouse to avoid initialization issues."""
+    try:
+        from tools.warehouse import get_warehouse_instance
+        warehouse = get_warehouse_instance()
+        if warehouse and hasattr(warehouse, 'connected') and warehouse.connected:
+            return warehouse
+        return None
+    except Exception as e:
+        logger.warning("Failed to import warehouse", error=str(e))
+        return None
+
+
 class ConversationStage(str, Enum):
-    """Stages of the build conversation."""
-    INITIAL = "initial"  # Ask what user wants to accomplish
-    SUMMARY = "summary"  # Present summary with hints
-    DATABASE_SELECTION = "database_selection"  # Ask for database(s)
-    TRANSFORMATION_NAME = "transformation_name"  # Ask for transformation name
-    CONNECTION_DETAILS = "connection_details"  # Ask for connection details
-    CONFIRMATION = "confirmation"  # Final confirmation
+    """Stages of the build conversation - Smart Assistant Flow."""
+    INTENT_CAPTURE = "intent_capture"  # Understand what user wants
+    AUTO_DISCOVERY = "auto_discovery"  # Automatically discover and suggest everything
+    QUICK_CONFIRMATION = "confirmation"  # Show everything, allow quick changes (use 'confirmation' for frontend compatibility)
     COMPLETE = "complete"  # Setup complete
 
 
-class BuildSummaryAgent(BaseAgent):
-    """Agent that guides users through creating transformation flows."""
+class RAGBuildAgent(BaseAgent):
+    """Agent that guides users through creating transformation flows using RAG documents, vectors, and LLM."""
     
     def __init__(self, **kwargs):
-        """Initialize build summary agent."""
-        super().__init__(name="BuildSummaryAgent", **kwargs)
+        """Initialize RAG build agent."""
+        super().__init__(name="RAGBuildAgent", **kwargs)
         self.conversation_state = {}  # Store conversation state per session
+        # Initialize vector stores for RAG
+        self.document_store = DocumentVectorStore()
+        self.build_store = BuildVectorStore()
+        self.log("info", "RAGBuildAgent initialized with document and build vector stores")
     
     def start_conversation(self, session_id: str, user_input: str) -> Dict:
         """
@@ -52,7 +93,7 @@ class BuildSummaryAgent(BaseAgent):
         # Get or initialize session state
         if session_id not in self.conversation_state:
             self.conversation_state[session_id] = {
-                "stage": ConversationStage.INITIAL,
+                "stage": ConversationStage.INTENT_CAPTURE,
                 "data": {},
                 "messages": []
             }
@@ -61,271 +102,390 @@ class BuildSummaryAgent(BaseAgent):
         state["messages"].append({"role": "user", "content": user_input})
         
         # Process based on current stage
-        if state["stage"] == ConversationStage.INITIAL:
-            return self._handle_initial(user_input, state)
-        elif state["stage"] == ConversationStage.SUMMARY:
-            return self._handle_summary_confirmation(user_input, state)
-        elif state["stage"] == ConversationStage.DATABASE_SELECTION:
-            return self._handle_database_selection(user_input, state)
-        elif state["stage"] == ConversationStage.TRANSFORMATION_NAME:
-            return self._handle_transformation_name(user_input, state)
-        elif state["stage"] == ConversationStage.CONNECTION_DETAILS:
-            return self._handle_connection_details(user_input, state)
-        elif state["stage"] == ConversationStage.CONFIRMATION:
-            return self._handle_final_confirmation(user_input, state)
-        else:
+        if state["stage"] == ConversationStage.INTENT_CAPTURE:
+            return self._handle_intent_capture(user_input, state)
+        elif state["stage"] == ConversationStage.AUTO_DISCOVERY:
+            return self._handle_auto_discovery(user_input, state)
+        elif state["stage"] == ConversationStage.QUICK_CONFIRMATION:
+            return self._handle_quick_confirmation(user_input, state)
+        elif state["stage"] == ConversationStage.COMPLETE:
             return {
-                "stage": state["stage"],
+                "stage": ConversationStage.COMPLETE.value,
                 "message": "Setup is already complete. Would you like to create another transformation?",
                 "requires_input": True,
                 "data": state["data"]
             }
+        else:
+            # Fallback: reset to intent capture
+            state["stage"] = ConversationStage.INTENT_CAPTURE
+            return self._handle_intent_capture(user_input, state)
     
-    def _handle_initial(self, user_input: str, state: Dict) -> Dict:
-        """Handle initial stage - understand what user wants to accomplish."""
+    def _retrieve_rag_context(self, query: str, categories: Optional[List[str]] = None) -> str:
+        """Retrieve relevant RAG documents and similar builds for context."""
+        context_parts = []
+        
+        # Retrieve relevant RAG documents
+        if self.document_store and self.document_store.is_available():
+            if categories:
+                for category in categories:
+                    docs = self.document_store.search_documents(query, k=3, category=category)
+                    if docs:
+                        context_parts.append(f"\n--- Relevant {category.upper()} Documentation ---")
+                        for i, doc in enumerate(docs, 1):
+                            context_parts.append(f"\n[{i}] {doc['metadata'].get('file_name', 'Document')} (Score: {doc['similarity_score']:.2f})")
+                            context_parts.append(f"{doc['content'][:500]}...")  # First 500 chars
+            else:
+                docs = self.document_store.search_documents(query, k=5)
+                if docs:
+                    context_parts.append("\n--- Relevant Documentation ---")
+                    for i, doc in enumerate(docs, 1):
+                        context_parts.append(f"\n[{i}] {doc['metadata'].get('file_name', 'Document')} ({doc['metadata'].get('category', 'general')})")
+                        context_parts.append(f"{doc['content'][:400]}...")
+        
+        # Retrieve similar past builds
+        if self.build_store and self.build_store.is_available():
+            similar_builds = self.build_store.search_similar_builds(query, k=3)
+            if similar_builds:
+                context_parts.append("\n--- Similar Past Builds ---")
+                for i, build in enumerate(similar_builds, 1):
+                    context_parts.append(f"\n[{i}] {build.get('transformation_name', 'Unnamed')} (Score: {build.get('similarity_score', 0):.2f})")
+                    context_parts.append(f"Intent: {build.get('intent', 'N/A')}")
+                    context_parts.append(f"Databases: {', '.join(build.get('databases', []))}")
+        
+        return "\n".join(context_parts) if context_parts else ""
+    
+    def _handle_intent_capture(self, user_input: str, state: Dict) -> Dict:
+        """Handle intent capture - understand what user wants and move to auto-discovery with RAG context."""
         # Check if LLM is available
         if not self.llm:
             return {
-                "stage": ConversationStage.INITIAL.value,
+                "stage": ConversationStage.INTENT_CAPTURE.value,
                 "message": "❌ Error: LLM API key is not configured. Please check your .env file and ensure OPENAI_API_KEY or ANTHROPIC_API_KEY is set.",
                 "requires_input": True,
                 "data": state["data"]
             }
         
-        # Use LLM to understand user intent and generate summary
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a helpful AI Data Engineer assistant. Your job is to understand what the user wants to build and suggest a clear summary.
+        # Retrieve RAG context
+        rag_context = self._retrieve_rag_context(user_input, categories=["documentation", "examples", "rules"])
+        
+        # Use LLM to understand user intent with RAG context
+        system_prompt = """You are a helpful AI Data Engineer assistant. Your job is to understand what the user wants to build.
 
-Based on the user's input, create a summary that:
-1. Clearly states what they want to accomplish
-2. Suggests 2-3 specific hints/options they might want
+Extract from the user's input:
+1. What they want to accomplish (intent)
+2. Any mentioned databases or data sources
+3. Any mentioned tables or data entities
+4. The type of transformation (dashboard, report, pipeline, etc.)
 
-Examples:
-- User: "I want to create Sales Dashboard"
-  Summary: "Create a Sales Dashboard?"
-  Hints: ["Create a Sales Dashboard", "Create a Performance Dashboard"]
-
-- User: "I need performance monitoring"
-  Summary: "Create a Performance Dashboard?"
-  Hints: ["Create a Performance Dashboard", "Create a Sales Dashboard"]
+Use the provided documentation and similar past builds as context to better understand the user's intent and suggest appropriate transformations.
 
 Return JSON with:
-- summary: A clear summary statement ending with a question mark
-- hints: List of 2-3 suggested transformation names (e.g., "Create a Sales Dashboard", "Create a Performance Dashboard")
 - intent: What the user wants to accomplish (brief description)
-"""),
-            ("user", "User input: {user_input}\n\nUnderstand their intent and create a summary with hints.")
+- mentioned_databases: List of database names mentioned (if any)
+- mentioned_tables: List of table names mentioned (if any)
+- transformation_type: Type of transformation (dashboard, report, pipeline, analytics, etc.)
+- keywords: List of key words that might help match to databases/tables
+"""
+        
+        if rag_context:
+            system_prompt += f"\n\nRelevant Context:{rag_context}"
+        
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            ("user", "User input: {user_input}\n\nExtract the intent and any mentioned databases/tables.")
         ])
         
         chain = prompt | self.llm | json_parser
         
         try:
-            result = chain.invoke({"user_input": user_input})
+            result = invoke_with_timeout(chain, {"user_input": user_input}, timeout=30)
             
             state["data"]["intent"] = result.get("intent", user_input)
-            state["data"]["summary"] = result.get("summary", "")
-            state["data"]["suggested_hints"] = result.get("hints", [])
-            state["stage"] = ConversationStage.SUMMARY
+            state["data"]["mentioned_databases"] = result.get("mentioned_databases", [])
+            state["data"]["mentioned_tables"] = result.get("mentioned_tables", [])
+            state["data"]["transformation_type"] = result.get("transformation_type", "transformation")
+            state["data"]["keywords"] = result.get("keywords", [])
             
-            hints_text = "\n".join([f"- {hint}" for hint in result.get("hints", [])])
+            # Immediately perform auto-discovery
+            state["stage"] = ConversationStage.AUTO_DISCOVERY
+            discovery_result = self._perform_auto_discovery(state)
             
-            return {
-                "stage": ConversationStage.SUMMARY.value,
-                "message": f"{result.get('summary', '')}\n\nWould you like me to do that?\n\nSuggested options:\n{hints_text}",
-                "hints": result.get("hints", []),
-                "requires_input": True,
-                "data": state["data"]
-            }
+            # Prepend a friendly message
+            discovery_result["message"] = f"I'll create a {result.get('transformation_type', 'transformation')} for you. Let me gather what I need...\n\n" + discovery_result["message"]
+            
+            return discovery_result
         except Exception as e:
-            self.log("error", "Failed to process initial input", error=str(e), exc_info=True)
+            self.log("error", "Failed to process intent", error=str(e), exc_info=True)
             error_msg = str(e)
             if "API key" in error_msg or "authentication" in error_msg.lower():
                 return {
-                    "stage": ConversationStage.INITIAL.value,
+                    "stage": ConversationStage.INTENT_CAPTURE.value,
                     "message": "❌ Error: LLM API key is not configured. Please check your .env file and ensure OPENAI_API_KEY or ANTHROPIC_API_KEY is set.",
                     "requires_input": True,
                     "data": state["data"]
                 }
             return {
-                "stage": ConversationStage.INITIAL.value,
+                "stage": ConversationStage.INTENT_CAPTURE.value,
                 "message": f"I understand you want to create something. Could you tell me more about what you'd like to build?\n\n(Error: {error_msg})",
                 "requires_input": True,
                 "data": state["data"]
             }
     
-    def _handle_summary_confirmation(self, user_input: str, state: Dict) -> Dict:
-        """Handle summary confirmation - move to database selection."""
-        # Check if user confirmed (yes, proceed, ok, etc.)
-        confirmation_keywords = ["yes", "y", "proceed", "ok", "okay", "sure", "confirm", "correct"]
-        user_lower = user_input.lower().strip()
+    def _handle_auto_discovery(self, user_input: str, state: Dict) -> Dict:
+        """Handle auto-discovery - if not done yet, do it; otherwise move to confirmation."""
+        # If auto-discovery hasn't been done, do it now
+        if "databases" not in state["data"]:
+            return self._perform_auto_discovery(state)
         
-        if any(keyword in user_lower for keyword in confirmation_keywords):
-            # Get available databases/schemas with table details
-            available_schemas = self._get_available_schemas()
-            schema_details = self._get_schema_details(available_schemas)
-            
-            state["stage"] = ConversationStage.DATABASE_SELECTION
-            state["available_schemas"] = available_schemas
-            state["schema_details"] = schema_details
-            
-            # Build hints from schema details
-            hints = []
-            for schema, tables in schema_details.items():
-                if tables:
-                    hints.append(f"{schema} Database (has {len(tables)} tables: {', '.join(tables[:3])}{'...' if len(tables) > 3 else ''})")
-                else:
-                    hints.append(f"{schema} Database")
-            
-            hints_text = "\n".join([f"- {hint}" for hint in hints[:5]]) if hints else "- Sales Database\n- Customer Database"
-            
-            return {
-                "stage": ConversationStage.DATABASE_SELECTION.value,
-                "message": f"Great! Please confirm which database(s) I should connect to.\n\nAvailable databases:\n{hints_text}\n\nFor example: 'Sales and Customer Database' or 'Sales, Customer'",
-                "requires_input": True,
-                "data": state["data"],
-                "available_schemas": available_schemas,
-                "hints": hints
-            }
-        else:
-            # User might have provided more details or wants to change
-            return self._handle_initial(user_input, state)
+        # Auto-discovery already done, move to quick confirmation
+        # If user input is empty or just whitespace, show confirmation again
+        if not user_input or not user_input.strip():
+            state["stage"] = ConversationStage.QUICK_CONFIRMATION
+            return self._build_quick_confirmation_message(state)
+        
+        state["stage"] = ConversationStage.QUICK_CONFIRMATION
+        return self._handle_quick_confirmation(user_input, state)
     
-    def _handle_database_selection(self, user_input: str, state: Dict) -> Dict:
-        """Handle database selection - validate and move to transformation name."""
-        # Extract database names from user input
-        available_schemas = state.get("available_schemas", [])
-        databases = self._extract_databases(user_input, available_schemas)
+    def _perform_auto_discovery(self, state: Dict) -> Dict:
+        """Perform automatic discovery of databases, tables, name, and connection."""
+        intent = state["data"].get("intent", "")
+        keywords = state["data"].get("keywords", [])
+        mentioned_databases = state["data"].get("mentioned_databases", [])
         
-        # Validate: non-empty and plausible
-        if not databases:
-            schema_list = ", ".join(available_schemas[:5]) if available_schemas else "Sales, Customer, Orders"
-            return {
-                "stage": ConversationStage.DATABASE_SELECTION.value,
-                "message": f"I couldn't identify the databases from your input. Please specify which database(s) to connect to.\n\nAvailable options: {schema_list}\n\nFor example: 'Sales and Customer Database' or 'Sales, Customer'",
-                "requires_input": True,
-                "data": state["data"]
-            }
+        # Get all available schemas
+        available_schemas = self._get_available_schemas()
+        schema_details = self._get_schema_details(available_schemas)
         
-        # Echo back for confirmation
-        databases_str = ", ".join(databases)
-        state["data"]["databases"] = databases
-        state["stage"] = ConversationStage.TRANSFORMATION_NAME
-        
-        # Generate transformation name suggestions using AI
-        suggested_names = self._generate_transformation_name_suggestions_ai(
-            state["data"].get("intent", ""),
-            databases
+        # Smart database matching using LLM
+        selected_databases = self._smart_match_databases(
+            intent, keywords, mentioned_databases, available_schemas, schema_details
         )
-        if not suggested_names:
-            suggested_names = state["data"].get("suggested_hints", [])
-        if not suggested_names:
-            suggested_names = self._generate_transformation_name_suggestions(state["data"].get("intent", ""))
         
-        hints_text = "\n".join([f"- {name}" for name in suggested_names])
+        # If no match found, use first available or mentioned
+        if not selected_databases:
+            if mentioned_databases:
+                # Try to match mentioned databases
+                for mentioned in mentioned_databases:
+                    for schema in available_schemas:
+                        if mentioned.lower() in schema.lower() or schema.lower() in mentioned.lower():
+                            selected_databases.append(schema)
+                            break
+            if not selected_databases and available_schemas:
+                selected_databases = [available_schemas[0]]  # Use first available
         
-        return {
-            "stage": ConversationStage.TRANSFORMATION_NAME.value,
-            "message": f"Confirmed: I'll connect to {databases_str} Database(s).\n\nWhat transformation name should I use? I'll create a folder for it.\n\nSuggestions:\n{hints_text}",
-            "hints": suggested_names,
-            "requires_input": True,
-            "data": state["data"]
-        }
-    
-    def _handle_transformation_name(self, user_input: str, state: Dict) -> Dict:
-        """Handle transformation name - validate and move to connection details."""
-        transformation_name = user_input.strip()
+        # Get tables for selected databases
+        selected_tables = []
+        for db in selected_databases:
+            tables = schema_details.get(db, [])
+            # Smart table selection based on intent
+            relevant_tables = self._smart_select_tables(intent, keywords, tables)
+            if not relevant_tables and tables:
+                relevant_tables = tables[:3]  # Default to first 3 tables
+            # Store as tuples (database, table) for easy grouping
+            for table in relevant_tables:
+                selected_tables.append((db, table))
         
-        # Validate: non-empty and plausible (at least 3 characters, not just numbers)
-        if not transformation_name or len(transformation_name) < 3:
-            return {
-                "stage": ConversationStage.TRANSFORMATION_NAME.value,
-                "message": "Please provide a valid transformation name (at least 3 characters).",
-                "requires_input": True,
-                "data": state["data"]
-            }
-        
-        if transformation_name.isdigit():
-            return {
-                "stage": ConversationStage.TRANSFORMATION_NAME.value,
-                "message": "Please provide a meaningful transformation name (not just numbers).",
-                "requires_input": True,
-                "data": state["data"]
-            }
-        
-        # Sanitize name (remove special characters, spaces -> underscores)
+        # Generate transformation name
+        transformation_name = self._generate_transformation_name_auto(intent, selected_databases)
         sanitized_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else '' for c in transformation_name)
         sanitized_name = sanitized_name.replace(' ', '_').upper()
         
-        # Echo back for confirmation
+        # Check connection - default to existing
+        use_existing_connection = True
+        connection_details = {}
+        
+        # Store discovered data
+        state["data"]["databases"] = selected_databases
+        state["data"]["tables"] = selected_tables
         state["data"]["transformation_name"] = transformation_name
         state["data"]["transformation_name_sanitized"] = sanitized_name
-        state["stage"] = ConversationStage.CONNECTION_DETAILS
+        state["data"]["use_existing_connection"] = use_existing_connection
+        state["data"]["connection_details"] = connection_details
+        state["available_schemas"] = available_schemas
+        state["schema_details"] = schema_details
         
-        return {
-            "stage": ConversationStage.CONNECTION_DETAILS.value,
-            "message": f"Transformation name confirmed: {transformation_name} (folder: {sanitized_name})\n\nCan you share or confirm the connection details (host, user, credentials)? I'll store them securely.\n\nPlease provide:\n- Host\n- User\n- Database name\n- Port (optional, default: 5432 for PostgreSQL)\n\nOr say 'use existing' if you want to use configured credentials.",
-            "requires_input": True,
-            "data": state["data"]
-        }
+        # Move to quick confirmation
+        state["stage"] = ConversationStage.QUICK_CONFIRMATION
+        
+        return self._build_quick_confirmation_message(state)
     
-    def _handle_connection_details(self, user_input: str, state: Dict) -> Dict:
-        """Handle connection details - validate and move to confirmation."""
-        user_lower = user_input.lower().strip()
+    def _smart_match_databases(self, intent: str, keywords: List[str], mentioned: List[str], 
+                              available_schemas: List[str], schema_details: Dict[str, List[str]]) -> List[str]:
+        """Use LLM to intelligently match intent to databases with RAG context."""
+        if not available_schemas:
+            return []
         
-        if "use existing" in user_lower or "existing" in user_lower:
-            # Use existing configuration
-            state["data"]["use_existing_connection"] = True
-            state["data"]["connection_details"] = {}
-            connection_type = "existing configuration"
-        else:
-            # Try to extract connection details
-            connection_details = self._extract_connection_details(user_input)
+        # If LLM not available, use simple keyword matching
+        if not self.llm:
+            # Try to match based on keywords and mentioned databases
+            matched = []
+            intent_lower = intent.lower()
+            keywords_lower = [k.lower() for k in keywords] if keywords else []
             
-            # Validate: at least host must be provided
-            if not connection_details.get("host"):
-                return {
-                    "stage": ConversationStage.CONNECTION_DETAILS.value,
-                    "message": "I need at least a host address. Please provide connection details in format:\nHost: <host>\nUser: <user>\nDatabase: <database>\nPort: <port> (optional)\n\nOr say 'use existing' to use configured credentials.",
-                    "requires_input": True,
-                    "data": state["data"]
-                }
+            for schema in available_schemas:
+                schema_lower = schema.lower()
+                # Check if schema name matches keywords or intent
+                if any(keyword in schema_lower for keyword in keywords_lower if keyword):
+                    matched.append(schema)
+                elif any(word in schema_lower for word in intent_lower.split() if len(word) > 3):
+                    matched.append(schema)
+                # Check mentioned databases
+                for mentioned_db in mentioned:
+                    if mentioned_db.lower() in schema_lower or schema_lower in mentioned_db.lower():
+                        matched.append(schema)
             
-            # Validate host format (basic check)
-            host = connection_details.get("host", "")
-            if len(host) < 3 or not any(c.isalnum() or c in ('.', '-', '_') for c in host):
-                return {
-                    "stage": ConversationStage.CONNECTION_DETAILS.value,
-                    "message": "The host address doesn't look valid. Please provide a valid host (e.g., localhost, 192.168.1.1, db.example.com).",
-                    "requires_input": True,
-                    "data": state["data"]
-                }
-            
-            state["data"]["connection_details"] = connection_details
-            state["data"]["use_existing_connection"] = False
-            connection_type = f"host: {connection_details.get('host')}"
+            return list(set(matched))[:3]  # Remove duplicates and limit
         
-        # Echo back for confirmation
-        state["stage"] = ConversationStage.CONFIRMATION
+        try:
+            # Retrieve RAG context for database matching
+            search_query = f"{intent} {' '.join(keywords)} {' '.join(mentioned)}"
+            rag_context = self._retrieve_rag_context(search_query, categories=["schemas", "documentation"])
+            
+            # Build context about available schemas
+            schema_info = []
+            for schema in available_schemas[:10]:
+                tables = schema_details.get(schema, [])
+                schema_info.append(f"{schema} (has {len(tables)} tables: {', '.join(tables[:3])})")
+            
+            system_prompt = """You are a helpful AI assistant that matches user intent to database schemas.
+Use the provided documentation to understand database structures and naming conventions.
+
+Given the user's intent and available schemas, select the most relevant database(s).
+
+Return JSON with:
+- selected_databases: List of schema names that match the intent (1-3 schemas)
+- reasoning: Brief explanation of why these schemas were selected
+"""
+            
+            if rag_context:
+                system_prompt += f"\n\nRelevant Documentation:{rag_context}"
+            
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
+                ("user", """User Intent: {intent}
+Keywords: {keywords}
+Mentioned Databases: {mentioned}
+Available Schemas: {schemas}
+
+Select the most relevant database(s) for this intent.""")
+            ])
+            
+            chain = prompt | self.llm | json_parser
+            result = invoke_with_timeout(chain, {
+                "intent": intent,
+                "keywords": ", ".join(keywords) if keywords else "none",
+                "mentioned": ", ".join(mentioned) if mentioned else "none",
+                "schemas": "\n".join(schema_info)
+            }, timeout=30)
+            
+            selected = result.get("selected_databases", [])
+            # Validate that selected schemas exist
+            valid_schemas = [s for s in selected if s in available_schemas]
+            return valid_schemas[:3]  # Limit to 3 databases
+        except Exception as e:
+            self.log("warning", "Failed to smart match databases", error=str(e))
+            return []
+    
+    def _smart_select_tables(self, intent: str, keywords: List[str], tables: List[str]) -> List[str]:
+        """Select relevant tables based on intent and keywords."""
+        if not tables:
+            return []
         
-        # Build summary
-        databases = ", ".join(state["data"].get("databases", []))
+        # Simple keyword matching
+        intent_lower = intent.lower()
+        keywords_lower = [k.lower() for k in keywords]
+        
+        relevant = []
+        for table in tables:
+            table_lower = table.lower()
+            # Check if table name matches keywords or intent
+            if any(keyword in table_lower for keyword in keywords_lower if keyword):
+                relevant.append(table)
+            elif any(word in table_lower for word in intent_lower.split() if len(word) > 3):
+                relevant.append(table)
+        
+        # If no matches, return first few tables
+        return relevant[:5] if relevant else tables[:3]
+    
+    def _generate_transformation_name_auto(self, intent: str, databases: List[str]) -> str:
+        """Automatically generate transformation name."""
+        # Try AI first
+        if self.llm and databases:
+            suggestions = self._generate_transformation_name_suggestions_ai(intent, databases)
+            if suggestions:
+                return suggestions[0]  # Use first suggestion
+        
+        # Fallback to keyword-based
+        suggestions = self._generate_transformation_name_suggestions(intent)
+        if suggestions:
+            return suggestions[0]
+        
+        # Last resort
+        return "TRANSFORMATION"
+    
+    def _build_quick_confirmation_message(self, state: Dict) -> Dict:
+        """Build the quick confirmation message showing everything with RAG context."""
+        databases = state["data"].get("databases", [])
+        tables = state["data"].get("tables", [])
         transformation_name = state["data"].get("transformation_name", "")
-        connection_info = connection_type if "connection_type" in locals() else ("existing configuration" if state["data"].get("use_existing_connection") else f"host: {state['data']['connection_details'].get('host', 'N/A')}")
+        intent = state["data"].get("intent", "")
+        use_existing = state["data"].get("use_existing_connection", True)
+        
+        # Build message
+        message_parts = []
+        message_parts.append(f"I found {len(databases)} database(s): {', '.join(databases)}")
+        
+        if tables:
+            # Group tables by database
+            tables_by_db = {}
+            for db, table in tables:
+                if db not in tables_by_db:
+                    tables_by_db[db] = []
+                tables_by_db[db].append(table)
+            
+            table_info = []
+            for db, table_list in tables_by_db.items():
+                table_info.append(f"{db}: {', '.join(table_list[:5])}{'...' if len(table_list) > 5 else ''}")
+            
+            if table_info:
+                message_parts.append(f"I'll use these tables:\n" + "\n".join(f"  - {info}" for info in table_info))
+        
+        message_parts.append(f"Name: {transformation_name}")
+        message_parts.append(f"Connection: {'Using existing connection' if use_existing else 'New connection'}")
+        
+        # Add RAG context suggestions
+        if intent:
+            search_query = f"{intent} {transformation_name} {' '.join(databases)}"
+            rag_docs = self.document_store.search_documents(search_query, k=2, category="examples") if self.document_store and self.document_store.is_available() else []
+            similar_builds = self.build_store.search_similar_builds(search_query, k=2) if self.build_store and self.build_store.is_available() else []
+            
+            if rag_docs or similar_builds:
+                message_parts.append("\n💡 Suggestions based on similar builds and documentation:")
+                if similar_builds:
+                    for build in similar_builds[:2]:
+                        message_parts.append(f"  - Similar build: {build.get('transformation_name', 'Unnamed')} (Intent: {build.get('intent', 'N/A')[:50]}...)")
+                if rag_docs:
+                    for doc in rag_docs[:1]:
+                        message_parts.append(f"  - See: {doc['metadata'].get('file_name', 'Document')} for examples")
+        
+        message_parts.append("\nSound good? (Say 'yes' to proceed, or tell me what to change)")
         
         return {
-            "stage": ConversationStage.CONFIRMATION.value,
-            "message": f"I'll connect to {databases}, create a folder named {transformation_name}, and use {connection_info}. Shall I proceed?",
+            "stage": ConversationStage.QUICK_CONFIRMATION.value,  # This will be "confirmation"
+            "message": "\n".join(message_parts),
             "requires_input": True,
-            "data": state["data"]
+            "data": state["data"],
+            "hints": []  # Add hints field for frontend compatibility
         }
     
-    def _handle_final_confirmation(self, user_input: str, state: Dict) -> Dict:
-        """Handle final confirmation - save and complete."""
-        confirmation_keywords = ["yes", "y", "proceed", "ok", "okay", "sure", "confirm", "go ahead", "create"]
+    def _handle_quick_confirmation(self, user_input: str, state: Dict) -> Dict:
+        """Handle quick confirmation - allow changes or proceed."""
         user_lower = user_input.lower().strip()
         
+        # Check for confirmation
+        confirmation_keywords = ["yes", "y", "proceed", "ok", "okay", "sure", "confirm", "go ahead", "create", "sounds good"]
         if any(keyword in user_lower for keyword in confirmation_keywords):
-            # Save to buildRetrieval database
+            # Save and complete
             build_data = {
                 "intent": state["data"].get("intent", ""),
                 "databases": state["data"].get("databases", []),
@@ -333,33 +493,126 @@ Return JSON with:
                 "transformation_name_sanitized": state["data"].get("transformation_name_sanitized", ""),
                 "connection_details": state["data"].get("connection_details", {}),
                 "use_existing_connection": state["data"].get("use_existing_connection", False),
-                "created_at": None  # Will be set when saving
+                "created_at": None
             }
             
             state["stage"] = ConversationStage.COMPLETE
-            state["data"]["build_id"] = "pending"  # Will be set after saving
+            state["data"]["build_id"] = "pending"
             
             return {
                 "stage": ConversationStage.COMPLETE.value,
                 "message": f"Perfect! I'm creating your transformation '{state['data'].get('transformation_name', '')}' now. This will be saved to the buildRetrieval database.\n\nSetup complete! 🎉",
                 "requires_input": False,
                 "data": state["data"],
-                "build_data": build_data  # For saving
+                "build_data": build_data
             }
-        else:
-            return {
-                "stage": ConversationStage.CONFIRMATION.value,
-                "message": "Would you like to make any changes before proceeding? Or say 'yes' to confirm.",
-                "requires_input": True,
-                "data": state["data"]
-            }
+        
+        # Check for changes
+        changes = self._parse_quick_changes(user_input, state)
+        if changes:
+            # Apply changes
+            self._apply_quick_changes(changes, state)
+            # Show updated confirmation
+            result = self._build_quick_confirmation_message(state)
+            result["message"] = "Updated! " + result["message"]
+            return result
+        
+        # If no clear action, ask for clarification
+        return {
+            "stage": ConversationStage.QUICK_CONFIRMATION.value,
+            "message": "I didn't understand. You can:\n- Say 'yes' to proceed\n- Say 'change name to X' to change the name\n- Say 'use database X' to change databases\n- Say 'add table X' to add tables",
+            "requires_input": True,
+            "data": state["data"],
+            "hints": []
+        }
+    
+    def _parse_quick_changes(self, user_input: str, state: Dict) -> Dict:
+        """Parse user input for quick changes."""
+        changes = {}
+        user_lower = user_input.lower()
+        
+        # Change name
+        if "change name" in user_lower or "name to" in user_lower:
+            import re
+            match = re.search(r'(?:name to|name is|call it)\s+([^\.,!?]+)', user_input, re.IGNORECASE)
+            if match:
+                changes["name"] = match.group(1).strip()
+        
+        # Change database
+        if "use database" in user_lower or "database" in user_lower:
+            available_schemas = state.get("available_schemas", [])
+            for schema in available_schemas:
+                if schema.lower() in user_lower:
+                    changes["databases"] = [schema]
+                    break
+        
+        # Add table
+        if "add table" in user_lower or "include table" in user_lower:
+            import re
+            match = re.search(r'(?:table|table:)\s+([^\.,!?]+)', user_input, re.IGNORECASE)
+            if match:
+                changes["add_table"] = match.group(1).strip()
+        
+        return changes
+    
+    def _apply_quick_changes(self, changes: Dict, state: Dict):
+        """Apply quick changes to state."""
+        if "name" in changes:
+            new_name = changes["name"]
+            state["data"]["transformation_name"] = new_name
+            sanitized = "".join(c if c.isalnum() or c in (' ', '-', '_') else '' for c in new_name)
+            state["data"]["transformation_name_sanitized"] = sanitized.replace(' ', '_').upper()
+        
+        if "databases" in changes:
+            state["data"]["databases"] = changes["databases"]
+            # Re-select tables for new databases
+            schema_details = state.get("schema_details", {})
+            new_tables = []
+            for db in changes["databases"]:
+                tables = schema_details.get(db, [])
+                new_tables.extend([(db, table) for table in tables[:3]])
+            state["data"]["tables"] = new_tables
+        
+        if "add_table" in changes:
+            table_name = changes["add_table"]
+            current_tables = state["data"].get("tables", [])
+            # Find which database this table belongs to
+            schema_details = state.get("schema_details", {})
+            for db, tables in schema_details.items():
+                if table_name.lower() in [t.lower() for t in tables]:
+                    current_tables.append((db, table_name))
+                    break
+            state["data"]["tables"] = current_tables
     
     def _get_available_schemas(self) -> List[str]:
         """Get list of available database schemas."""
         try:
-            # Try to get schemas from warehouse
-            if hasattr(warehouse, 'list_schemas'):
-                schemas = warehouse.list_schemas()
+            warehouse = get_warehouse()
+            if warehouse and hasattr(warehouse, 'list_schemas') and hasattr(warehouse, 'connected') and warehouse.connected:
+                # Use timeout wrapper for warehouse query
+                import threading
+                result_container = [None]
+                exception_container = [None]
+                
+                def query_schemas():
+                    try:
+                        result_container[0] = warehouse.list_schemas()
+                    except Exception as e:
+                        exception_container[0] = e
+                
+                thread = threading.Thread(target=query_schemas)
+                thread.daemon = True
+                thread.start()
+                thread.join(5)  # 5 second timeout
+                
+                if thread.is_alive():
+                    self.log("warning", "Warehouse list_schemas timed out, using defaults")
+                    return ["public", "sales", "customer", "orders"]
+                
+                if exception_container[0]:
+                    raise exception_container[0]
+                
+                schemas = result_container[0]
                 return schemas if schemas else ["public", "sales", "customer", "orders"]
             else:
                 return ["public", "sales", "customer", "orders"]
@@ -370,23 +623,54 @@ Return JSON with:
     def _get_schema_details(self, schemas: List[str]) -> Dict[str, List[str]]:
         """Get schema details including tables for hints."""
         schema_details = {}
+        warehouse = get_warehouse()
+        if not warehouse or not (hasattr(warehouse, 'connected') and warehouse.connected):
+            return {schema: [] for schema in schemas[:10]}
+        
         for schema in schemas[:10]:  # Limit to first 10 schemas
             try:
-                tables = warehouse.list_tables(schema)
-                schema_details[schema] = tables[:5]  # Limit to first 5 tables per schema
+                # Use timeout wrapper for warehouse query
+                import threading
+                result_container = [None]
+                exception_container = [None]
+                
+                def query_tables():
+                    try:
+                        result_container[0] = warehouse.list_tables(schema)
+                    except Exception as e:
+                        exception_container[0] = e
+                
+                thread = threading.Thread(target=query_tables)
+                thread.daemon = True
+                thread.start()
+                thread.join(3)  # 3 second timeout per schema
+                
+                if thread.is_alive():
+                    self.log("warning", f"list_tables timed out for schema {schema}")
+                    schema_details[schema] = []
+                    continue
+                
+                if exception_container[0]:
+                    raise exception_container[0]
+                
+                tables = result_container[0]
+                schema_details[schema] = tables[:5] if tables else []  # Limit to first 5 tables per schema
             except Exception as e:
                 self.log("warning", f"Failed to get tables for schema {schema}", error=str(e))
                 schema_details[schema] = []
         return schema_details
     
     def _generate_transformation_name_suggestions_ai(self, intent: str, databases: List[str]) -> List[str]:
-        """Generate transformation name suggestions using AI based on intent and databases."""
+        """Generate transformation name suggestions using AI with RAG context."""
         if not self.llm:
             return []
         
         try:
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", """You are a helpful AI assistant that generates transformation names based on user intent and database names.
+            # Retrieve RAG context for naming conventions
+            search_query = f"naming conventions transformation {intent}"
+            rag_context = self._retrieve_rag_context(search_query, categories=["rules", "documentation"])
+            
+            system_prompt = """You are a helpful AI assistant that generates transformation names based on user intent and database names.
 
 Generate 3 transformation name suggestions in UPPERCASE with underscores (e.g., SALES_DASHBOARD, PERFORMANCE_MONITORING).
 
@@ -398,15 +682,21 @@ The names should be:
 
 Return JSON with:
 - suggestions: List of 3 transformation name strings
-"""),
+"""
+            
+            if rag_context:
+                system_prompt += f"\n\nNaming Guidelines:{rag_context}"
+            
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
                 ("user", "Intent: {intent}\nDatabases: {databases}\n\nGenerate 3 transformation name suggestions.")
             ])
             
             chain = prompt | self.llm | json_parser
-            result = chain.invoke({
+            result = invoke_with_timeout(chain, {
                 "intent": intent,
                 "databases": ", ".join(databases)
-            })
+            }, timeout=30)
             
             suggestions = result.get("suggestions", [])
             return suggestions[:3] if suggestions else []
@@ -497,4 +787,5 @@ Return JSON with:
         """Reset a conversation session."""
         if session_id in self.conversation_state:
             del self.conversation_state[session_id]
+        self.log("info", "Session reset", session_id=session_id)
 
