@@ -1,4 +1,4 @@
-"""Build Summary Agent - Guides users through creating transformation flows."""
+"""RAG Build Agent - Guides users through creating transformation flows using RAG documents, vectors, and LLM."""
 
 from typing import Dict, List, Optional, Any
 from langchain_core.prompts import ChatPromptTemplate
@@ -50,6 +50,45 @@ def get_warehouse():
         return None
 
 
+def invoke_with_timeout(chain, input_data, timeout=30):
+    """Invoke a chain with timeout to prevent hanging."""
+    import threading
+    result_container = [None]
+    exception_container = [None]
+    
+    def invoke_chain():
+        try:
+            result_container[0] = chain.invoke(input_data)
+        except Exception as e:
+            exception_container[0] = e
+    
+    thread = threading.Thread(target=invoke_chain)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout)
+    
+    if thread.is_alive():
+        raise TimeoutError(f"LLM call timed out after {timeout} seconds")
+    
+    if exception_container[0]:
+        raise exception_container[0]
+    
+    return result_container[0]
+
+
+def get_warehouse():
+    """Lazy import of warehouse to avoid initialization issues."""
+    try:
+        from tools.warehouse import get_warehouse_instance
+        warehouse = get_warehouse_instance()
+        if warehouse and hasattr(warehouse, 'connected') and warehouse.connected:
+            return warehouse
+        return None
+    except Exception as e:
+        logger.warning("Failed to import warehouse", error=str(e))
+        return None
+
+
 class ConversationStage(str, Enum):
     """Stages of the build conversation - Smart Assistant Flow."""
     INTENT_CAPTURE = "intent_capture"  # Understand what user wants
@@ -58,13 +97,17 @@ class ConversationStage(str, Enum):
     COMPLETE = "complete"  # Setup complete
 
 
-class BuildSummaryAgent(BaseAgent):
-    """Agent that guides users through creating transformation flows."""
+class RAGBuildAgent(BaseAgent):
+    """Agent that guides users through creating transformation flows using RAG documents, vectors, and LLM."""
     
     def __init__(self, **kwargs):
-        """Initialize build summary agent."""
-        super().__init__(name="BuildSummaryAgent", **kwargs)
+        """Initialize RAG build agent."""
+        super().__init__(name="RAGBuildAgent", **kwargs)
         self.conversation_state = {}  # Store conversation state per session
+        # Initialize vector stores for RAG
+        self.document_store = DocumentVectorStore()
+        self.build_store = BuildVectorStore()
+        self.log("info", "RAGBuildAgent initialized with document and build vector stores")
     
     def start_conversation(self, session_id: str, user_input: str) -> Dict:
         """
@@ -584,13 +627,16 @@ Select the most relevant database(s) for this intent.""")
         return schema_details
     
     def _generate_transformation_name_suggestions_ai(self, intent: str, databases: List[str]) -> List[str]:
-        """Generate transformation name suggestions using AI based on intent and databases."""
+        """Generate transformation name suggestions using AI with RAG context."""
         if not self.llm:
             return []
         
         try:
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", """You are a helpful AI assistant that generates transformation names based on user intent and database names.
+            # Retrieve RAG context for naming conventions
+            search_query = f"naming conventions transformation {intent}"
+            rag_context = self._retrieve_rag_context(search_query, categories=["rules", "documentation"])
+            
+            system_prompt = """You are a helpful AI assistant that generates transformation names based on user intent and database names.
 
 Generate 3 transformation name suggestions in UPPERCASE with underscores (e.g., SALES_DASHBOARD, PERFORMANCE_MONITORING).
 
@@ -602,7 +648,13 @@ The names should be:
 
 Return JSON with:
 - suggestions: List of 3 transformation name strings
-"""),
+"""
+            
+            if rag_context:
+                system_prompt += f"\n\nNaming Guidelines:{rag_context}"
+            
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
                 ("user", "Intent: {intent}\nDatabases: {databases}\n\nGenerate 3 transformation name suggestions.")
             ])
             
