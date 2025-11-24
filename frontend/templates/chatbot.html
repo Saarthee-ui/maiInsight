@@ -646,6 +646,12 @@
                 // Show build section content
                 mainContent.style.display = 'none';
                 showPageContent(page);
+                // Initialize build chatbot when navigating to build page
+                setTimeout(() => {
+                    if (typeof initializeBuildChatbot === 'function') {
+                        initializeBuildChatbot();
+                    }
+                }, 100);
             } else {
                 // For other pages, show placeholder content
                 mainContent.style.display = 'none';
@@ -720,10 +726,7 @@
                                     <button id="resetBuildChat" onclick="resetBuildChat()" style="padding: 4px 12px; background: #f3f4f6; color: #1f2937; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; cursor: pointer;">Reset</button>
                                 </div>
                                 <div id="buildChatMessages" style="flex: 1; border: 1px solid #e5e7eb; border-radius: 4px; background: #f9fafb; padding: 12px; overflow-y: auto; margin-bottom: 12px; min-height: 0;">
-                                    <div style="padding: 8px; background: white; border-radius: 4px; margin-bottom: 8px;">
-                                        <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">AI Assistant</div>
-                                        <div style="font-size: 14px; color: #1f2937;">Hello! What would you like to build? For example: "I want to create a Sales Dashboard"</div>
-                                    </div>
+                                    <!-- Initial greeting will be loaded from backend -->
                                 </div>
                                 <div style="display: flex; gap: 8px; flex-shrink: 0;">
                                     <input type="text" id="buildChatInput" placeholder="Type your message here..." style="flex: 1; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; outline: none;" onkeypress="if(event.key === 'Enter') sendBuildMessage()">
@@ -1517,13 +1520,23 @@
                 const result = await response.json();
 
                 if (result.success) {
-                    // Clear messages
-                    document.getElementById('buildChatMessages').innerHTML = `
-                        <div style="padding: 8px; background: white; border-radius: 4px; margin-bottom: 8px;">
-                            <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">AI Assistant</div>
-                            <div style="font-size: 14px; color: #1f2937;">Hello! What would you like to build? For example: "I want to create a Sales Dashboard"</div>
-                        </div>
-                    `;
+                    // Clear messages and fetch initial greeting
+                    document.getElementById('buildChatMessages').innerHTML = '';
+                    // Trigger initial greeting by sending empty message
+                    const initResponse = await fetch('/api/build/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            message: "",
+                            session_id: getBuildSessionId()
+                        })
+                    });
+                    const initResult = await initResponse.json();
+                    if (initResult.success) {
+                        addBuildMessage(initResult.message, false);
+                    }
                     
                     // Clear summary
                     document.getElementById('buildSummary').innerHTML = '<div style="color: #6b7280; font-size: 14px; text-align: center; padding: 20px;">No build in progress</div>';
@@ -1546,19 +1559,53 @@
         }
 
         // Initialize build chatbot (called when navigating to build page)
-        function initializeBuildChatbot() {
+        async function initializeBuildChatbot() {
             // Reset session if needed
             buildSessionId = null;
             
-            // Ensure initial message is shown
+            // Ensure initial message is shown - fetch from backend
             const messagesContainer = document.getElementById('buildChatMessages');
             if (messagesContainer && messagesContainer.children.length === 0) {
-                messagesContainer.innerHTML = `
-                    <div style="padding: 8px; background: white; border-radius: 4px; margin-bottom: 8px;">
-                        <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">AI Assistant</div>
-                        <div style="font-size: 14px; color: #1f2937;">Hello! What would you like to build? For example: "I want to create a Sales Dashboard"</div>
-                    </div>
-                `;
+                // Show loading
+                messagesContainer.innerHTML = '<div style="padding: 8px; background: white; border-radius: 4px; margin-bottom: 8px;"><div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">AI Assistant</div><div style="font-size: 14px; color: #1f2937;">Loading...</div></div>';
+                
+                // Fetch initial greeting from backend
+                try {
+                    const response = await fetch('/api/build/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            message: "",  // Empty message to trigger initial greeting
+                            session_id: getBuildSessionId()
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        // Clear and show the greeting from backend
+                        messagesContainer.innerHTML = '';
+                        addBuildMessage(result.message, false);
+                    } else {
+                        // Fallback to default message
+                        messagesContainer.innerHTML = `
+                            <div style="padding: 8px; background: white; border-radius: 4px; margin-bottom: 8px;">
+                                <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">AI Assistant</div>
+                                <div style="font-size: 14px; color: #1f2937;">Hello! What would you like to build? For example: "I want to create a Sales Dashboard"</div>
+                            </div>
+                        `;
+                    }
+                } catch (error) {
+                    // Fallback to default message on error
+                    messagesContainer.innerHTML = `
+                        <div style="padding: 8px; background: white; border-radius: 4px; margin-bottom: 8px;">
+                            <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">AI Assistant</div>
+                            <div style="font-size: 14px; color: #1f2937;">Hello! What would you like to build? For example: "I want to create a Sales Dashboard"</div>
+                        </div>
+                    `;
+                }
             }
         }
 

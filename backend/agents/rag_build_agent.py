@@ -1,9 +1,11 @@
-"""Build Summary Agent - Guides users through creating transformation flows."""
+"""RAG Build Agent - Guides users through creating transformation flows using RAG documents, vectors, and LLM."""
 
 from typing import Dict, List, Optional, Any
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from agents.base_agent import BaseAgent
+from storage.document_vector_store import DocumentVectorStore
+from storage.build_vector_store import BuildVectorStore
 import structlog
 from enum import Enum
 
@@ -52,19 +54,24 @@ def get_warehouse():
 
 class ConversationStage(str, Enum):
     """Stages of the build conversation - Smart Assistant Flow."""
+    INITIAL_GREETING = "initial_greeting"  # Show initial greeting with options
     INTENT_CAPTURE = "intent_capture"  # Understand what user wants
     AUTO_DISCOVERY = "auto_discovery"  # Automatically discover and suggest everything
     QUICK_CONFIRMATION = "confirmation"  # Show everything, allow quick changes (use 'confirmation' for frontend compatibility)
     COMPLETE = "complete"  # Setup complete
 
 
-class BuildSummaryAgent(BaseAgent):
-    """Agent that guides users through creating transformation flows."""
+class RAGBuildAgent(BaseAgent):
+    """Agent that guides users through creating transformation flows using RAG documents, vectors, and LLM."""
     
     def __init__(self, **kwargs):
-        """Initialize build summary agent."""
-        super().__init__(name="BuildSummaryAgent", **kwargs)
+        """Initialize RAG build agent."""
+        super().__init__(name="RAGBuildAgent", **kwargs)
         self.conversation_state = {}  # Store conversation state per session
+        # Initialize vector stores for RAG
+        self.document_store = DocumentVectorStore()
+        self.build_store = BuildVectorStore()
+        self.log("info", "RAGBuildAgent initialized with document and build vector stores")
     
     def start_conversation(self, session_id: str, user_input: str) -> Dict:
         """
@@ -87,16 +94,32 @@ class BuildSummaryAgent(BaseAgent):
         # Get or initialize session state
         if session_id not in self.conversation_state:
             self.conversation_state[session_id] = {
-                "stage": ConversationStage.INTENT_CAPTURE,
+                "stage": ConversationStage.INITIAL_GREETING,
                 "data": {},
                 "messages": []
             }
         
         state = self.conversation_state[session_id]
-        state["messages"].append({"role": "user", "content": user_input})
+        
+        # If it's the first message and stage is initial greeting, show greeting
+        if state["stage"] == ConversationStage.INITIAL_GREETING and len(state["messages"]) == 0:
+            # Show greeting for empty message or greeting keywords
+            if not user_input or user_input.strip() == "":
+                return self._handle_initial_greeting(state)
+            # If user sends greeting, show options
+            greeting_keywords = ["hi", "hello", "hey", "greetings", "start", "begin"]
+            if any(keyword in user_input.lower().strip() for keyword in greeting_keywords):
+                state["messages"].append({"role": "user", "content": user_input})
+                return self._handle_initial_greeting(state)
+        
+        # Append user message if not empty
+        if user_input:
+            state["messages"].append({"role": "user", "content": user_input})
         
         # Process based on current stage
-        if state["stage"] == ConversationStage.INTENT_CAPTURE:
+        if state["stage"] == ConversationStage.INITIAL_GREETING:
+            return self._handle_option_selection(user_input, state)
+        elif state["stage"] == ConversationStage.INTENT_CAPTURE:
             return self._handle_intent_capture(user_input, state)
         elif state["stage"] == ConversationStage.AUTO_DISCOVERY:
             return self._handle_auto_discovery(user_input, state)
@@ -114,8 +137,155 @@ class BuildSummaryAgent(BaseAgent):
             state["stage"] = ConversationStage.INTENT_CAPTURE
             return self._handle_intent_capture(user_input, state)
     
+    def _handle_initial_greeting(self, state: Dict) -> Dict:
+        """Show initial greeting with options."""
+        greeting_message = """Hi, How can I help you?
+
+Please select one of the following options:
+
+1. Do you want to build a Report?
+2. Do you want to do the full refresh?
+3. Do you want to make changes to existing Workflow?
+4. Do you want to create report from existing Silver layer?
+5. Do you want to build Gold layer on existing Silver Layer?
+6. Do you want to do bulk migration of report?
+
+Please reply with the option number (1-6) or the option text."""
+        
+        return {
+            "stage": ConversationStage.INITIAL_GREETING.value,
+            "message": greeting_message,
+            "requires_input": True,
+            "data": state["data"],
+            "hints": [
+                "1. Build a Report",
+                "2. Full refresh",
+                "3. Make changes to existing Workflow",
+                "4. Create report from existing Silver layer",
+                "5. Build Gold layer on existing Silver Layer",
+                "6. Bulk migration of report"
+            ]
+        }
+    
+    def _handle_option_selection(self, user_input: str, state: Dict) -> Dict:
+        """Handle user's selection from initial greeting options."""
+        user_lower = user_input.lower().strip()
+        
+        # Handle greeting messages - show options again
+        greeting_keywords = ["hi", "hello", "hey", "greetings", "start", "begin"]
+        if any(keyword in user_lower for keyword in greeting_keywords) and len(user_lower.split()) <= 3:
+            return self._handle_initial_greeting(state)
+        
+        # Map options to intents
+        option_mapping = {
+            "1": "build a report",
+            "build a report": "build a report",
+            "report": "build a report",
+            "2": "full refresh",
+            "full refresh": "full refresh",
+            "refresh": "full refresh",
+            "3": "make changes to existing workflow",
+            "make changes to existing workflow": "make changes to existing workflow",
+            "changes to workflow": "make changes to existing workflow",
+            "workflow": "make changes to existing workflow",
+            "4": "create report from existing silver layer",
+            "create report from existing silver layer": "create report from existing silver layer",
+            "silver layer report": "create report from existing silver layer",
+            "silver": "create report from existing silver layer",
+            "5": "build gold layer on existing silver layer",
+            "build gold layer on existing silver layer": "build gold layer on existing silver layer",
+            "gold layer": "build gold layer on existing silver layer",
+            "gold": "build gold layer on existing silver layer",
+            "6": "bulk migration of report",
+            "bulk migration of report": "bulk migration of report",
+            "bulk migration": "bulk migration of report",
+            "migration": "bulk migration of report"
+        }
+        
+        # Find matching option
+        selected_intent = None
+        for key, intent in option_mapping.items():
+            if key in user_lower:
+                selected_intent = intent
+                break
+        
+        if selected_intent:
+            # Store the selected option/intent
+            state["data"]["selected_option"] = selected_intent
+            state["data"]["intent"] = selected_intent
+            state["stage"] = ConversationStage.INTENT_CAPTURE
+            
+            # Provide context-specific message based on selection
+            context_messages = {
+                "build a report": "Great! I'll help you build a report. Please tell me more about what kind of report you want to create.",
+                "full refresh": "I'll help you with a full refresh. Please provide details about what needs to be refreshed.",
+                "make changes to existing workflow": "I'll help you make changes to an existing workflow. Please tell me which workflow you want to modify.",
+                "create report from existing silver layer": "I'll help you create a report from an existing Silver layer. Please provide details about the Silver layer and the report you want to create.",
+                "build gold layer on existing silver layer": "I'll help you build a Gold layer on an existing Silver layer. Please provide details about the Silver layer and the Gold layer requirements.",
+                "bulk migration of report": "I'll help you with bulk migration of reports. Please provide details about the reports you want to migrate."
+            }
+            
+            message = context_messages.get(selected_intent, f"I understand you want to {selected_intent}. Please provide more details.")
+            
+            return {
+                "stage": ConversationStage.INTENT_CAPTURE.value,
+                "message": message,
+                "requires_input": True,
+                "data": state["data"]
+            }
+        else:
+            # Invalid selection, show options again
+            return {
+                "stage": ConversationStage.INITIAL_GREETING.value,
+                "message": "I didn't understand your selection. Please choose one of the following options:\n\n1. Do you want to build a Report?\n2. Do you want to do the full refresh?\n3. Do you want to make changes to existing Workflow?\n4. Do you want to create report from existing Silver layer?\n5. Do you want to build Gold layer on existing Silver Layer?\n6. Do you want to do bulk migration of report?\n\nPlease reply with the option number (1-6) or the option text.",
+                "requires_input": True,
+                "data": state["data"],
+                "hints": [
+                    "1. Build a Report",
+                    "2. Full refresh",
+                    "3. Make changes to existing Workflow",
+                    "4. Create report from existing Silver layer",
+                    "5. Build Gold layer on existing Silver Layer",
+                    "6. Bulk migration of report"
+                ]
+            }
+    
+    def _retrieve_rag_context(self, query: str, categories: Optional[List[str]] = None) -> str:
+        """Retrieve relevant RAG documents and similar builds for context."""
+        context_parts = []
+        
+        # Retrieve relevant RAG documents
+        if self.document_store and self.document_store.is_available():
+            if categories:
+                for category in categories:
+                    docs = self.document_store.search_documents(query, k=3, category=category)
+                    if docs:
+                        context_parts.append(f"\n--- Relevant {category.upper()} Documentation ---")
+                        for i, doc in enumerate(docs, 1):
+                            context_parts.append(f"\n[{i}] {doc['metadata'].get('file_name', 'Document')} (Score: {doc['similarity_score']:.2f})")
+                            context_parts.append(f"{doc['content'][:500]}...")  # First 500 chars
+            else:
+                docs = self.document_store.search_documents(query, k=5)
+                if docs:
+                    context_parts.append("\n--- Relevant Documentation ---")
+                    for i, doc in enumerate(docs, 1):
+                        context_parts.append(f"\n[{i}] {doc['metadata'].get('file_name', 'Document')} ({doc['metadata'].get('category', 'general')})")
+                        context_parts.append(f"{doc['content'][:400]}...")
+        
+        # Retrieve similar past builds
+        if self.build_store and self.build_store.is_available():
+            similar_builds = self.build_store.search_similar_builds(query, top_k=3)
+            if similar_builds:
+                context_parts.append("\n--- Similar Past Builds ---")
+                for i, build in enumerate(similar_builds, 1):
+                    context_parts.append(f"\n[{i}] {build.get('transformation_name', 'Unnamed')} (Score: {build.get('similarity_score', 0):.2f})")
+                    context_parts.append(f"Intent: {build.get('intent', 'N/A')}")
+                    context_parts.append(f"Databases: {', '.join(build.get('databases', []))}")
+        
+        return "\n".join(context_parts) if context_parts else ""
+    
     def _handle_intent_capture(self, user_input: str, state: Dict) -> Dict:
-        """Handle intent capture - understand what user wants and move to auto-discovery."""
+        """Handle intent capture - understand what user wants and move to auto-discovery with RAG context."""
         # Check if LLM is available
         if not self.llm:
             return {
@@ -125,9 +295,11 @@ class BuildSummaryAgent(BaseAgent):
                 "data": state["data"]
             }
         
-        # Use LLM to understand user intent
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a helpful AI Data Engineer assistant. Your job is to understand what the user wants to build.
+        # Retrieve RAG context
+        rag_context = self._retrieve_rag_context(user_input, categories=["documentation", "examples", "rules"])
+        
+        # Use LLM to understand user intent with RAG context
+        system_prompt = """You are a helpful AI Data Engineer assistant. Your job is to understand what the user wants to build.
 
 Extract from the user's input:
 1. What they want to accomplish (intent)
@@ -135,13 +307,21 @@ Extract from the user's input:
 3. Any mentioned tables or data entities
 4. The type of transformation (dashboard, report, pipeline, etc.)
 
+Use the provided documentation and similar past builds as context to better understand the user's intent and suggest appropriate transformations.
+
 Return JSON with:
 - intent: What the user wants to accomplish (brief description)
 - mentioned_databases: List of database names mentioned (if any)
 - mentioned_tables: List of table names mentioned (if any)
 - transformation_type: Type of transformation (dashboard, report, pipeline, analytics, etc.)
 - keywords: List of key words that might help match to databases/tables
-"""),
+"""
+        
+        if rag_context:
+            system_prompt += f"\n\nRelevant Context:{rag_context}"
+        
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
             ("user", "User input: {user_input}\n\nExtract the intent and any mentioned databases/tables.")
         ])
         
@@ -261,7 +441,7 @@ Return JSON with:
     
     def _smart_match_databases(self, intent: str, keywords: List[str], mentioned: List[str], 
                               available_schemas: List[str], schema_details: Dict[str, List[str]]) -> List[str]:
-        """Use LLM to intelligently match intent to databases."""
+        """Use LLM to intelligently match intent to databases with RAG context."""
         if not available_schemas:
             return []
         
@@ -287,21 +467,31 @@ Return JSON with:
             return list(set(matched))[:3]  # Remove duplicates and limit
         
         try:
+            # Retrieve RAG context for database matching
+            search_query = f"{intent} {' '.join(keywords)} {' '.join(mentioned)}"
+            rag_context = self._retrieve_rag_context(search_query, categories=["schemas", "documentation"])
+            
             # Build context about available schemas
             schema_info = []
             for schema in available_schemas[:10]:
                 tables = schema_details.get(schema, [])
                 schema_info.append(f"{schema} (has {len(tables)} tables: {', '.join(tables[:3])})")
             
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", """You are a helpful AI assistant that matches user intent to database schemas.
+            system_prompt = """You are a helpful AI assistant that matches user intent to database schemas.
+Use the provided documentation to understand database structures and naming conventions.
 
 Given the user's intent and available schemas, select the most relevant database(s).
 
 Return JSON with:
 - selected_databases: List of schema names that match the intent (1-3 schemas)
 - reasoning: Brief explanation of why these schemas were selected
-"""),
+"""
+            
+            if rag_context:
+                system_prompt += f"\n\nRelevant Documentation:{rag_context}"
+            
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
                 ("user", """User Intent: {intent}
 Keywords: {keywords}
 Mentioned Databases: {mentioned}
@@ -364,10 +554,11 @@ Select the most relevant database(s) for this intent.""")
         return "TRANSFORMATION"
     
     def _build_quick_confirmation_message(self, state: Dict) -> Dict:
-        """Build the quick confirmation message showing everything."""
+        """Build the quick confirmation message showing everything with RAG context."""
         databases = state["data"].get("databases", [])
         tables = state["data"].get("tables", [])
         transformation_name = state["data"].get("transformation_name", "")
+        intent = state["data"].get("intent", "")
         use_existing = state["data"].get("use_existing_connection", True)
         
         # Build message
@@ -391,6 +582,22 @@ Select the most relevant database(s) for this intent.""")
         
         message_parts.append(f"Name: {transformation_name}")
         message_parts.append(f"Connection: {'Using existing connection' if use_existing else 'New connection'}")
+        
+        # Add RAG context suggestions
+        if intent:
+            search_query = f"{intent} {transformation_name} {' '.join(databases)}"
+            rag_docs = self.document_store.search_documents(search_query, k=2, category="examples") if self.document_store and self.document_store.is_available() else []
+            similar_builds = self.build_store.search_similar_builds(search_query, top_k=2) if self.build_store and self.build_store.is_available() else []
+            
+            if rag_docs or similar_builds:
+                message_parts.append("\n💡 Suggestions based on similar builds and documentation:")
+                if similar_builds:
+                    for build in similar_builds[:2]:
+                        message_parts.append(f"  - Similar build: {build.get('transformation_name', 'Unnamed')} (Intent: {build.get('intent', 'N/A')[:50]}...)")
+                if rag_docs:
+                    for doc in rag_docs[:1]:
+                        message_parts.append(f"  - See: {doc['metadata'].get('file_name', 'Document')} for examples")
+        
         message_parts.append("\nSound good? (Say 'yes' to proceed, or tell me what to change)")
         
         return {
@@ -584,13 +791,16 @@ Select the most relevant database(s) for this intent.""")
         return schema_details
     
     def _generate_transformation_name_suggestions_ai(self, intent: str, databases: List[str]) -> List[str]:
-        """Generate transformation name suggestions using AI based on intent and databases."""
+        """Generate transformation name suggestions using AI with RAG context."""
         if not self.llm:
             return []
         
         try:
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", """You are a helpful AI assistant that generates transformation names based on user intent and database names.
+            # Retrieve RAG context for naming conventions
+            search_query = f"naming conventions transformation {intent}"
+            rag_context = self._retrieve_rag_context(search_query, categories=["rules", "documentation"])
+            
+            system_prompt = """You are a helpful AI assistant that generates transformation names based on user intent and database names.
 
 Generate 3 transformation name suggestions in UPPERCASE with underscores (e.g., SALES_DASHBOARD, PERFORMANCE_MONITORING).
 
@@ -602,7 +812,13 @@ The names should be:
 
 Return JSON with:
 - suggestions: List of 3 transformation name strings
-"""),
+"""
+            
+            if rag_context:
+                system_prompt += f"\n\nNaming Guidelines:{rag_context}"
+            
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
                 ("user", "Intent: {intent}\nDatabases: {databases}\n\nGenerate 3 transformation name suggestions.")
             ])
             

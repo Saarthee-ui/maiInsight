@@ -53,6 +53,7 @@ class BaseAgent:
                 model="gpt-4o",
                 temperature=self.temperature,
                 api_key=settings.openai_api_key,
+                timeout=30,  # 30 second timeout
             )
         elif provider == "anthropic":
             if not settings.anthropic_api_key:
@@ -61,6 +62,7 @@ class BaseAgent:
                 model="claude-3-5-sonnet-20241022",
                 temperature=self.temperature,
                 api_key=settings.anthropic_api_key,
+                timeout=30,  # 30 second timeout
             )
         elif provider == "ollama":
             return ChatOllama(

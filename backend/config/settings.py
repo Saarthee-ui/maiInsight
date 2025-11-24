@@ -2,13 +2,45 @@
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Literal
+from pathlib import Path
 
+
+def find_env_file():
+    """Find .env file in project root or current directory."""
+    # Get the project root (parent of backend directory)
+    current_file = Path(__file__)
+    project_root = current_file.parent.parent  # backend/config -> backend -> project root
+    
+    # Try multiple locations
+    env_paths = [
+        project_root / ".env",  # Project root
+        Path(".env"),  # Current working directory
+        Path("../.env"),  # Parent of current directory
+    ]
+    
+    for path in env_paths:
+        if path.exists():
+            return str(path.resolve())
+    
+    return None
+
+
+# Find .env file location
+env_file = find_env_file()
+if env_file:
+    import structlog
+    logger = structlog.get_logger()
+    logger.info("Found .env file", path=env_file)
+else:
+    import structlog
+    logger = structlog.get_logger()
+    logger.warning("No .env file found, using environment variables only")
 
 class Settings(BaseSettings):
     """Application settings."""
     
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=env_file or ".env",  # Use found .env or default
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"

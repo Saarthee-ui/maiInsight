@@ -13,7 +13,23 @@ original_cwd = os.getcwd()
 os.chdir(backend_path)
 
 # Import app
-from app import app
+from app import app, build_summary_agent
+
+# Verify agent is initialized
+print("\n" + "="*60)
+print("FINAL VERIFICATION")
+print("="*60)
+if build_summary_agent is None:
+    print("[CRITICAL ERROR] BuildSummaryAgent is NOT initialized!")
+    print("The agent will not work. Check the logs above for errors.")
+    print("="*60)
+    print("\nDO NOT CONTINUE - Fix the initialization errors first!")
+    sys.exit(1)
+else:
+    print("[SUCCESS] BuildSummaryAgent is ready to use")
+    print(f"   - Agent Name: {build_summary_agent.name}")
+    print(f"   - Has LLM: {build_summary_agent.llm is not None}")
+    print("="*60 + "\n")
 
 # Run Flask app
 if __name__ == "__main__":
